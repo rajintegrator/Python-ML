@@ -46,8 +46,8 @@ def format_insights(df, title, columns=None):
         'performance_gap_pct': 'Gap %',
         'call_volume': 'Call Volume',
         'call_handle_tm': 'Extreme Call Time (s)',
-        'avg_handle_tm__ctgry_call_ctr': 'Avg Handle Time (s)',
-        'avg_handle_tm_call_ctr': 'Benchmark Handle Time (s)'
+        'avg_handle_tm': 'Avg Handle Time (s)',
+        'benchmark_handle_tm': 'Benchmark Handle Time (s)'
     }
 
     # Ensure only existing columns are selected
@@ -168,6 +168,7 @@ def analyze_extreme_calls(df):
     grouped_avg = df.groupby(['category_intent', 'sub_category_intent'])['call_handle_tm'].mean().reset_index()
     grouped_benchmark = df.groupby('ACSS_CALL_CTR_DESC')['avg_handle_tm_call_ctr'].first().reset_index()
 
+    # Merge grouped_avg and grouped_benchmark into extreme_calls
     extreme_calls = extreme_calls.merge(
         grouped_avg,
         on=['category_intent', 'sub_category_intent'],
@@ -180,9 +181,12 @@ def analyze_extreme_calls(df):
 
     # Rename columns for clarity
     extreme_calls = extreme_calls.rename(columns={
-        'call_handle_tm_avg': 'avg_handle_tm',
-        'avg_handle_tm_call_ctr': 'benchmark_handle_tm'
+        'call_handle_tm_avg': 'avg_handle_tm',  # Average handle time for the category/subcategory
+        'avg_handle_tm_call_ctr': 'benchmark_handle_tm'  # Benchmark handle time for the call center
     })
+
+    # Drop redundant columns if they exist
+    extreme_calls = extreme_calls.drop(columns=['avg_handle_tm_call_ctr_benchmark'], errors='ignore')
 
     # Sort by extreme call times for better readability
     extreme_calls = extreme_calls.sort_values('call_handle_tm', ascending=False)
