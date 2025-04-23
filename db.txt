@@ -258,3 +258,83 @@ def run_test(order_id):
         print("-" * 40)
     
     print("="*50)
+===================
+
+# ========== ENHANCED MASTER AGENT ==========
+def master_agent(state: AgentState):
+    tools = TelecomTools()
+    order_id = state.get("order_id", "")
+    
+    # Initialize default return values
+    result = {
+        "problem": "No analysis performed",
+        "next_step": "human",
+        **state  # Preserve existing state
+    }
+    
+    try:
+        if not order_id:
+            raise ValueError("Missing order_id in state")
+
+        # Get status with validation
+        status = tools.get_full_status(order_id)
+        if not all(status.values()):
+            raise ValueError("Invalid status data")
+
+        tools.log_fallout(order_id, "initial_detection")
+
+        # Execute LLM analysis
+        response = model.invoke(master_prompt.format(
+            order_id=order_id,
+            activation_status=status['activation'],
+            esim_status=status['esim'],
+            switch_status=status['switch']
+        ))
+
+        # Robust response parsing
+        decision = "human"
+        if response.content:
+            # Use regex for reliable parsing
+            import re
+            match = re.search(r'\[(.*?)\]', response.content)
+            if match:
+                decision = match.group(1).strip().lower()
+                
+        # Validate decision against allowed steps
+        valid_steps = {"resubmission", "esim", "switch"}
+        final_decision = decision if decision in valid_steps else "human"
+
+        return {
+            "problem": response.content[:500],  # Truncate if needed
+            "next_step": final_decision,
+            **state
+        }
+
+    except Exception as e:
+        print(f"Master Agent Error: {str(e)}")
+        return {
+            "problem": f"Error: {str(e)}",
+            "next_step": "human",
+            **state
+        }
+
+# ========== STATE VALIDATION ==========
+def validate_state(state: dict) -> AgentState:
+    """Ensure all required keys exist"""
+    return {
+        "order_id": state.get("order_id", ""),
+        "problem": state.get("problem", ""),
+        "resolution": state.get("resolution", ""),
+        "next_step": state.get("next_step", "human"),
+        "validation_result": state.get("validation_result", ""),
+        "retry_count": state.get("retry_count", 0)
+    }
+
+# ========== UPDATED WORKFLOW SETUP ==========
+workflow = StateGraph(AgentState)
+
+def safe_master_agent(state: AgentState):
+    return validate_state(master_agent(state))
+
+workflow.add_node("master", safe_master_agent)
+# Rest of workflow setup remains the same...
