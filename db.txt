@@ -1,35 +1,55 @@
-# ========== PROPER STATE HANDLING ==========
+# ========== 1. STATE DEFINITION & INITIALIZATION ==========
 class AgentState(TypedDict):
     order_id: str
-    current_step: Literal[
-        'analyze',
-        'resubmission', 
-        'esim', 
-        'switch', 
-        'human',
-        'validation',
-        'complete'
-    ]
+    current_step: Literal['analyze', 'resubmission', 'esim', 'switch', 'human', 'validation', 'complete']
     problem: str
     resolution: str
     validation_result: str
     retry_count: int
 
+def create_initial_state(order_id: str) -> AgentState:
+    """Guaranteed valid initial state"""
+    return {
+        'order_id': order_id,
+        'current_step': 'analyze',
+        'problem': '',
+        'resolution': '',
+        'validation_result': '',
+        'retry_count': 0
+    }
+
+# ========== 2. STATE MANAGEMENT DECORATOR ==========
 def state_updater(func):
-    """Decorator to maintain full state structure"""
+    """Enforces state integrity"""
     def wrapper(state: AgentState) -> AgentState:
-        new_state = state.copy()
-        result = func(new_state)
-        return {**new_state, **result}
+        try:
+            # Ensure input state validity
+            full_state = create_initial_state(state['order_id'])
+            full_state.update(state)
+            
+            # Execute agent
+            result = func(full_state)
+            
+            # Ensure output state validity
+            if 'current_step' not in result:
+                result['current_step'] = full_state['current_step']  # Fallback
+            return {**full_state, **result}
+        except Exception as e:
+            print(f"State error: {str(e)}")
+            return {
+                **full_state,
+                'current_step': 'human',
+                'problem': f"State corruption: {str(e)}"
+            }
     return wrapper
 
-# ========== UPDATED AGENTS ==========
+# ========== 3. AGENT IMPLEMENTATIONS ==========
 @state_updater
 def master_agent(state: AgentState) -> AgentState:
     try:
         tools = TelecomTools()
         status = tools.get_full_status(state['order_id'])
-        tools.log_fallout(state['order_id'], "initial_detection")
+        tools.log_fallout(state['order_id'], "detected")
         
         response = model.invoke(master_prompt.format(
             order_id=state['order_id'],
@@ -38,19 +58,19 @@ def master_agent(state: AgentState) -> AgentState:
             switch=status['switch']
         ))
         
-        # Parse decision
-        decision = 'human'
-        if match := re.search(r'\[(.*?)\]', response.content):
-            decision = match.group(1).lower()
-            
+        # Decision parsing with validation
+        decision = re.search(r'\[(.*?)\]', response.content)
+        decision = decision.group(1).lower() if decision else 'human'
+        valid_decisions = ['resubmission', 'esim', 'switch']
+        
         return {
-            'current_step': decision if decision in ['resubmission', 'esim', 'switch'] else 'human',
-            'problem': response.content
+            'current_step': decision if decision in valid_decisions else 'human',
+            'problem': response.content[:500]  # Truncate if needed
         }
     except Exception as e:
         return {
             'current_step': 'human',
-            'problem': f"Error: {str(e)}"
+            'problem': f"Master Agent Error: {str(e)}"
         }
 
 @state_updater
@@ -92,50 +112,71 @@ def validation_agent(state: AgentState) -> AgentState:
 
 @state_updater
 def human_agent(state: AgentState) -> AgentState:
-    print(f"\nHuman review needed for {state['order_id']}")
+    print(f"\nHUMAN REVIEW NEEDED: {state['order_id']}")
+    print(f"Problem: {state.get('problem', 'Unknown')}")
     action = input("1. Approve\n2. Reject\nChoice: ")
     return {
         'current_step': 'complete',
         'resolution': 'Human approved' if action == '1' else 'Human rejected'
     }
 
-# ========== WORKFLOW SETUP ==========
+# ========== 4. WORKFLOW SETUP ==========
 workflow = StateGraph(AgentState)
 
-workflow.add_node("analyze", master_agent)
-workflow.add_node("resubmission", resubmission_agent)
-workflow.add_node("esim", esim_agent)
-workflow.add_node("switch", switch_agent)
-workflow.add_node("validation", validation_agent)
-workflow.add_node("human", human_agent)
-workflow.add_node("complete", lambda state: state)
+nodes = {
+    'analyze': master_agent,
+    'resubmission': resubmission_agent,
+    'esim': esim_agent,
+    'switch': switch_agent,
+    'validation': validation_agent,
+    'human': human_agent,
+    'complete': lambda s: s  # Terminal node
+}
+
+for name, agent in nodes.items():
+    workflow.add_node(name, agent)
 
 workflow.set_entry_point("analyze")
 
+# Conditional transitions
 workflow.add_conditional_edges(
     "analyze",
-    lambda state: state['current_step'],
-    {
-        'resubmission': 'resubmission',
-        'esim': 'esim',
-        'switch': 'switch',
-        'human': 'human'
-    }
+    lambda s: s['current_step'],
+    {k: k for k in ['resubmission', 'esim', 'switch', 'human']}
 )
 
-for step in ["resubmission", "esim", "switch"]:
+for step in ['resubmission', 'esim', 'switch']:
     workflow.add_edge(step, "validation")
 
 workflow.add_conditional_edges(
     "validation",
-    lambda state: state['current_step'],
-    {
-        'complete': 'complete',
-        'human': 'human'
-    }
+    lambda s: s['current_step'],
+    {'complete': 'complete', 'human': 'human'}
 )
 
 workflow.add_edge("human", "complete")
 workflow.add_edge("complete", END)
 
 app = workflow.compile()
+
+# ========== 5. TEST EXECUTION ==========
+def run_test(order_id):
+    print(f"\n🚀 STARTING PROCESSING FOR {order_id}")
+    state = create_initial_state(order_id)
+    
+    for step in app.stream(state):
+        print(f"\n[{step['current_step'].upper()}]")
+        print(f"Problem: {step.get('problem', '')}")
+        print(f"Resolution: {step.get('resolution', '')}")
+        print(f"Validation: {step.get('validation_result', '')}")
+        print("Database Status:", TelecomTools.get_full_status(order_id))
+    
+    print("\n✅ FINAL STATE")
+    print("Order Status:", TelecomTools.get_full_status(order_id))
+    print("Fallout Records:", pd.read_sql(f"SELECT * FROM fallouts WHERE order_id = '{order_id}'", db_manager.conn))
+    print("="*60)
+
+# Execute test cases
+for order_id in ["ORD123", "ORD456", "ORD789", "ORD999"]:
+    run_test(order_id)
+    input("Press Enter to continue...")
