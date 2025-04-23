@@ -1,0 +1,69 @@
+# Modify the database initialization and sample data insertion:
+
+def initialize_database():
+    """Initialize database with proper connection handling"""
+    conn = None
+    try:
+        conn = sqlite3.connect('telecom.db', timeout=10)  # Increase timeout
+        cursor = conn.cursor()
+        
+        # Drop tables if they exist
+        cursor.execute("DROP TABLE IF EXISTS orders")
+        cursor.execute("DROP TABLE IF EXISTS fallouts")
+
+        # Create fresh tables
+        cursor.execute('''
+            CREATE TABLE orders (
+                order_id TEXT PRIMARY KEY,
+                customer_id TEXT,
+                activation_status TEXT,
+                esim_status TEXT,
+                switch_status TEXT,
+                issue_type TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE fallouts (
+                fallout_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT,
+                resolution_type TEXT,
+                status TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # Sample data with unique order_ids
+        orders = [
+            ('ORD123', 'CUST001', 'not_sent', 'active', 'ok', 'activation_issue'),
+            ('ORD456', 'CUST002', 'sent', 'failed', 'ok', 'esim_issue'),
+            ('ORD789', 'CUST003', 'sent', 'active', 'error', 'switch_issue'),
+            ('ORD999', 'CUST004', 'sent', 'active', 'ok', 'unknown_issue'),
+            ('ORD555', 'CUST005', 'sent', 'failed', 'error', 'complex_issue')
+        ]
+
+        # Use a single transaction
+        with conn:
+            conn.executemany('''
+                INSERT INTO orders 
+                (order_id, customer_id, activation_status, esim_status, switch_status, issue_type)
+                VALUES (?,?,?,?,?,?)
+            ''', orders)
+            
+        print("Database initialized successfully")
+        return conn
+        
+    except sqlite3.Error as e:
+        print(f"Database error: {e}")
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+# Initialize database properly
+conn = initialize_database()
+
+# Create fresh cursor for subsequent operations
+cursor = conn.cursor()
