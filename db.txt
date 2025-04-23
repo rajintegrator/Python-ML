@@ -1,107 +1,4 @@
-# !pip install langgraph langchain-core sqlalchemy pandas
-
-import sqlite3
-import re
-import pandas as pd
-from typing import TypedDict, Literal
-from langgraph.graph import StateGraph, END
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.chat_models import ChatOllama
-
-# ========== DATABASE MANAGER ==========
-class DatabaseManager:
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance.initialize()
-        return cls._instance
-    
-    def initialize(self):
-        self.conn = sqlite3.connect('telecom.db', timeout=20, check_same_thread=False)
-        self.create_tables()
-        self.seed_data()
-    
-    def create_tables(self):
-        with self.conn:
-            self.conn.execute('''
-                CREATE TABLE IF NOT EXISTS orders (
-                    order_id TEXT PRIMARY KEY,
-                    customer_id TEXT,
-                    activation_status TEXT,
-                    esim_status TEXT,
-                    switch_status TEXT,
-                    issue_type TEXT,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-                )''')
-            
-            self.conn.execute('''
-                CREATE TABLE IF NOT EXISTS fallouts (
-                    fallout_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    order_id TEXT,
-                    resolution_type TEXT,
-                    status TEXT CHECK(status IN ('open', 'resolved', 'failed')),
-                    validation_attempts INTEGER DEFAULT 0,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                )''')
-    
-    def seed_data(self):
-        sample_orders = [
-            ('ORD123', 'CUST001', 'not_sent', 'active', 'ok', 'activation_issue'),
-            ('ORD456', 'CUST002', 'sent', 'failed', 'ok', 'esim_issue'),
-            ('ORD789', 'CUST003', 'sent', 'active', 'error', 'switch_issue'),
-            ('ORD999', 'CUST004', 'sent', 'active', 'ok', 'unknown_issue')
-        ]
-        with self.conn:
-            self.conn.executemany('''
-                INSERT OR IGNORE INTO orders 
-                VALUES (?,?,?,?,?,?, CURRENT_TIMESTAMP)
-            ''', sample_orders)
-    
-    def get_cursor(self):
-        return self.conn.cursor()
-
-db_manager = DatabaseManager()
-
-# ========== TELECOM TOOLS ==========
-class TelecomTools:
-    @staticmethod
-    def get_full_status(order_id: str) -> dict:
-        with db_manager.conn:
-            cursor = db_manager.get_cursor()
-            cursor.execute('''
-                SELECT activation_status, esim_status, switch_status 
-                FROM orders WHERE order_id = ?
-            ''', (order_id,))
-            result = cursor.fetchone()
-            return {
-                'activation': result[0],
-                'esim': result[1],
-                'switch': result[2]
-            }
-    
-    @staticmethod
-    def log_fallout(order_id: str, resolution_type: str):
-        with db_manager.conn:
-            cursor = db_manager.get_cursor()
-            cursor.execute('''
-                INSERT INTO fallouts 
-                (order_id, resolution_type, status)
-                VALUES (?, ?, 'open')
-            ''', (order_id, resolution_type))
-    
-    @staticmethod
-    def update_status(order_id: str, field: str, value: str):
-        with db_manager.conn:
-            cursor = db_manager.get_cursor()
-            cursor.execute(f'''
-                UPDATE orders 
-                SET {field} = ?, last_updated = CURRENT_TIMESTAMP 
-                WHERE order_id = ?
-            ''', (value, order_id))
-
-# ========== AGENT STATE ==========
+# ========== PROPER STATE HANDLING ==========
 class AgentState(TypedDict):
     order_id: str
     current_step: Literal[
@@ -118,34 +15,17 @@ class AgentState(TypedDict):
     validation_result: str
     retry_count: int
 
-def create_initial_state(order_id: str) -> AgentState:
-    return {
-        'order_id': order_id,
-        'current_step': 'analyze',
-        'problem': '',
-        'resolution': '',
-        'validation_result': '',
-        'retry_count': 0
-    }
+def state_updater(func):
+    """Decorator to maintain full state structure"""
+    def wrapper(state: AgentState) -> AgentState:
+        new_state = state.copy()
+        result = func(new_state)
+        return {**new_state, **result}
+    return wrapper
 
-# ========== AGENTS ==========
-model = ChatOllama(model="llama2", temperature=0.2)
-
-# Master Agent
-master_prompt = ChatPromptTemplate.from_messages([
-    ("system", """Analyze telecom order {order_id} issues:
-    
-    Activation: {activation}
-    eSIM: {esim}
-    Switch: {switch}
-    
-    Respond with format:
-    Reasoning: <analysis>
-    Decision: [resubmission/esim/switch/human]""")
-])
-
+# ========== UPDATED AGENTS ==========
+@state_updater
 def master_agent(state: AgentState) -> AgentState:
-    new_state = state.copy()
     try:
         tools = TelecomTools()
         status = tools.get_full_status(state['order_id'])
@@ -163,61 +43,65 @@ def master_agent(state: AgentState) -> AgentState:
         if match := re.search(r'\[(.*?)\]', response.content):
             decision = match.group(1).lower()
             
-        new_state.update({
+        return {
             'current_step': decision if decision in ['resubmission', 'esim', 'switch'] else 'human',
             'problem': response.content
-        })
+        }
     except Exception as e:
-        new_state.update({
+        return {
             'current_step': 'human',
             'problem': f"Error: {str(e)}"
-        })
-    return new_state
+        }
 
-# Action Agents
+@state_updater
 def resubmission_agent(state: AgentState) -> AgentState:
     TelecomTools.update_status(state['order_id'], 'activation_status', 'pending')
-    return {'resolution': 'Activation resubmitted', 'current_step': 'validation'}
+    return {
+        'current_step': 'validation',
+        'resolution': 'Activation resubmitted'
+    }
 
+@state_updater 
 def esim_agent(state: AgentState) -> AgentState:
     TelecomTools.update_status(state['order_id'], 'esim_status', 'reprovisioned')
-    return {'resolution': 'eSIM reprovisioned', 'current_step': 'validation'}
+    return {
+        'current_step': 'validation',
+        'resolution': 'eSIM reprovisioned'
+    }
 
+@state_updater
 def switch_agent(state: AgentState) -> AgentState:
     TelecomTools.update_status(state['order_id'], 'switch_status', 'reconfigured')
-    return {'resolution': 'Switch reconfigured', 'current_step': 'validation'}
+    return {
+        'current_step': 'validation',
+        'resolution': 'Switch reconfigured'
+    }
 
-# Validation Agent
+@state_updater
 def validation_agent(state: AgentState) -> AgentState:
-    tools = TelecomTools()
-    status = tools.get_full_status(state['order_id'])
-    
+    status = TelecomTools.get_full_status(state['order_id'])
     valid = all([
         status['activation'] == 'pending',
         status['esim'] == 'reprovisioned',
         status['switch'] == 'reconfigured'
     ])
-    
-    result = 'Validation passed' if valid else 'Validation failed'
     return {
-        'validation_result': result,
-        'current_step': 'complete' if valid else 'human'
+        'current_step': 'complete' if valid else 'human',
+        'validation_result': 'Success' if valid else 'Failed'
     }
 
-# Human Agent
+@state_updater
 def human_agent(state: AgentState) -> AgentState:
     print(f"\nHuman review needed for {state['order_id']}")
-    print(f"Issue: {state['problem']}")
-    print(f"Resolution attempts: {state['resolution']}")
-    print(f"Validation result: {state['validation_result']}")
-    
-    action = input("Choose action (1-3):\n1. Approve\n2. Reject\n3. Escalate\n")
-    return {'current_step': 'complete'}
+    action = input("1. Approve\n2. Reject\nChoice: ")
+    return {
+        'current_step': 'complete',
+        'resolution': 'Human approved' if action == '1' else 'Human rejected'
+    }
 
 # ========== WORKFLOW SETUP ==========
 workflow = StateGraph(AgentState)
 
-# Add nodes
 workflow.add_node("analyze", master_agent)
 workflow.add_node("resubmission", resubmission_agent)
 workflow.add_node("esim", esim_agent)
@@ -226,7 +110,6 @@ workflow.add_node("validation", validation_agent)
 workflow.add_node("human", human_agent)
 workflow.add_node("complete", lambda state: state)
 
-# Set transitions
 workflow.set_entry_point("analyze")
 
 workflow.add_conditional_edges(
@@ -256,30 +139,3 @@ workflow.add_edge("human", "complete")
 workflow.add_edge("complete", END)
 
 app = workflow.compile()
-
-# ========== TEST EXECUTION ==========
-def run_test(order_id):
-    print(f"\n⚡ Processing {order_id}")
-    state = create_initial_state(order_id)
-    
-    for step in app.stream(state):
-        print(f"\n[{step['current_step'].upper()}]")
-        print(f"Status: {TelecomTools.get_full_status(order_id)}")
-        print(f"Problem: {step.get('problem', '')}")
-        print(f"Resolution: {step.get('resolution', '')}")
-    
-    print("\nFinal Status:")
-    display(pd.read_sql(f"SELECT * FROM orders WHERE order_id = '{order_id}'", db_manager.conn))
-    print("\nFallout Records:")
-    display(pd.read_sql(f"SELECT * FROM fallouts WHERE order_id = '{order_id}'", db_manager.conn))
-    print("="*60)
-
-# Execute tests
-test_cases = ["ORD123", "ORD456", "ORD789", "ORD999"]
-for case in test_cases:
-    run_test(case)
-    input("Press Enter to continue...")
-
-# Visualize
-from IPython.display import Image
-Image(app.get_graph().draw_mermaid_png())
