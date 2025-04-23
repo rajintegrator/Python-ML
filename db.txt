@@ -158,3 +158,33 @@ class TelecomTools:
         return TelecomTools.get_full_status(order_id)['switch']
 
     # Rest of the existing methods remain the same...
+
+class TelecomTools:
+    @staticmethod
+    def log_fallout(order_id: str, resolution_type: str):
+        """Log fallout in the database"""
+        with db_manager.conn:
+            cursor = db_manager.get_cursor()
+            cursor.execute('''
+                INSERT INTO fallouts 
+                (order_id, resolution_type, status)
+                VALUES (?, ?, 'open')
+            ''', (order_id, resolution_type))
+
+    # Rest of the existing methods remain the same...
+    @staticmethod
+    def get_full_status(order_id: str) -> dict:
+        with db_manager.conn:
+            cursor = db_manager.get_cursor()
+            cursor.execute('''
+                SELECT activation_status, esim_status, switch_status 
+                FROM orders WHERE order_id = ?
+            ''', (order_id,))
+            result = cursor.fetchone()
+            return {
+                'activation': result[0],
+                'esim': result[1],
+                'switch': result[2]
+            }
+
+    # Keep other existing methods...
