@@ -188,3 +188,73 @@ class TelecomTools:
             }
 
     # Keep other existing methods...
+======================
+
+# ========== FIXED AGENT STATE DEFINITION ==========
+class AgentState(TypedDict):
+    order_id: str
+    problem: str
+    resolution: Annotated[str, "Resolution details"]
+    next_step: Literal["resubmission", "esim", "switch", "human", "validation", "completed"]
+    validation_result: Annotated[str, "Validation outcome"]
+    retry_count: int
+
+# ========== UPDATED MASTER AGENT ==========
+def master_agent(state: AgentState):
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    try:
+        status = tools.get_full_status(order_id)
+        tools.log_fallout(order_id, "initial_detection")
+        
+        response = model.invoke(master_prompt.format(
+            order_id=order_id,
+            activation_status=status['activation'],
+            esim_status=status['esim'],
+            switch_status=status['switch']
+        ))
+        
+        # Robust response parsing
+        decision = "human"
+        if 'Decision:' in response.content:
+            decision_part = response.content.split('Decision:')[-1].strip().lower()
+            decision = decision_part[1:-1] if decision_part.startswith('[') else decision_part
+            decision = decision.split()[0]  # Take first word
+
+        # Validate decision
+        valid_steps = ["resubmission", "esim", "switch"]
+        final_decision = decision if decision in valid_steps else "human"
+        
+        return {
+            "next_step": final_decision,
+            "problem": response.content,
+            **state  # Preserve existing state keys
+        }
+        
+    except Exception as e:
+        print(f"Error in master agent: {e}")
+        return {
+            "next_step": "human",
+            "problem": str(e),
+            **state
+        }
+
+# ========== UPDATED TEST FUNCTION ==========
+def run_test(order_id):
+    print(f"\nProcessing order {order_id}:")
+    initial_state = {
+        "order_id": order_id,
+        "problem": "",
+        "resolution": "",
+        "next_step": "",
+        "validation_result": "",
+        "retry_count": 0
+    }
+    
+    for step in app.stream(initial_state):
+        print(f"STEP: {step['next_step']}")
+        print(f"STATE: {step}")
+        print("-" * 40)
+    
+    print("="*50)
