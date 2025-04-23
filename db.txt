@@ -1,78 +1,97 @@
-# ========== 1. CORRECTED DATABASE SETUP ==========
-class DBManager:
-    _instance = None
-    
-    def __new__(cls):
-        if not cls._instance:
-            cls._instance = super().__new__(cls)
-            cls._instance.conn = sqlite3.connect(
-                'telecom.db',
-                timeout=20,
-                check_same_thread=False
-            )
-            cls._instance.init_db()
-        return cls._instance
-    
-    def init_db(self):
-        with self.conn:
-            # Clean existing tables
-            self.conn.execute('DROP TABLE IF EXISTS orders')
-            self.conn.execute('DROP TABLE IF EXISTS fallouts')
-            
-            # Create fresh tables with correct schema
-            self.conn.execute('''
-                CREATE TABLE orders (
-                    order_id TEXT PRIMARY KEY,
-                    activation_status TEXT,
-                    esim_status TEXT,
-                    switch_status TEXT,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-                )''')
-            
-            self.conn.execute('''
-                CREATE TABLE fallouts (
-                    fallout_id INTEGER PRIMARY KEY,
-                    order_id TEXT,
-                    resolution_type TEXT,
-                    status TEXT,
-                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                )''')
-            
-            # Insert sample data with explicit columns
-            self.conn.executemany('''
-                INSERT INTO orders 
-                (order_id, activation_status, esim_status, switch_status)
-                VALUES (?, ?, ?, ?)
-            ''', [
-                ('ORD123', 'not_sent', 'active', 'ok'),
-                ('ORD456', 'sent', 'failed', 'ok'),
-                ('ORD789', 'sent', 'active', 'error'),
-                ('ORD999', 'sent', 'active', 'ok')
-            ])
+# ========== 1. STATE DEFINITION (REVISED) ==========
+class AgentState(TypedDict):
+    order_id: str
+    current_step: Literal[
+        'start',
+        'analyze',
+        'resubmit', 
+        'esim', 
+        'switch', 
+        'validation_check',
+        'human_intervention',
+        'complete'
+    ]
+    problem_description: str
+    action_taken: str
+    validation_status: str
+    attempt_count: int
 
-# ========== 2. UPDATED TELECOM SYSTEM CLASS ==========
-class TelecomSystem:
-    def get_status(self, order_id: str) -> dict:
-        with self.db.conn:
-            cursor = self.db.get_cursor()
-            cursor.execute('''
-                SELECT activation_status, esim_status, switch_status
-                FROM orders WHERE order_id = ?
-            ''', (order_id,))
-            result = cursor.fetchone()
-            return {
-                'activation': result[0],
-                'esim': result[1],
-                'switch': result[2]
-            }
-    
-    def update_status(self, order_id: str, field: str, value: str):
-        with self.db.conn:
-            cursor = self.db.get_cursor()
-            cursor.execute(f'''
-                UPDATE orders
-                SET {field} = ?
-                WHERE order_id = ?
-            ''', (value, order_id))
+def create_initial_state(order_id: str) -> AgentState:
+    return {
+        'order_id': order_id,
+        'current_step': 'start',
+        'problem_description': '',
+        'action_taken': '',
+        'validation_status': '',
+        'attempt_count': 0
+    }
 
-# Rest of the code remains the same as previous correct implementation
+# ========== 2. WORKFLOW NODES (UPDATED NAMES) ==========
+workflow = StateGraph(AgentState)
+
+workflow.add_node("start", lambda s: {'current_step': 'analyze'})
+workflow.add_node("analyze", analyze_agent)
+workflow.add_node("resubmit", resubmit_agent)
+workflow.add_node("esim", esim_agent)
+workflow.add_node("switch", switch_agent)
+workflow.add_node("validation_check", validate_agent)  # Renamed node
+workflow.add_node("human_intervention", human_agent)    # Renamed node
+workflow.add_node("complete", END)
+
+# ========== 3. VALIDATION AGENT (FIXED KEY) ==========
+@state_protector
+def validate_agent(state: AgentState) -> AgentState:
+    status = system.get_status(state['order_id'])
+    valid = all([
+        status['activation'] == 'pending',
+        status['esim'] == 'reprovisioned',
+        status['switch'] == 'reconfigured'
+    ])
+    return {
+        'current_step': 'complete' if valid else 'human_intervention',
+        'validation_status': 'Success' if valid else 'Failed'  # Correct key
+    }
+
+# ========== 4. WORKFLOW TRANSITIONS (UPDATED) ==========
+workflow.add_conditional_edges(
+    "analyze",
+    lambda s: s['current_step'],
+    {
+        'resubmit': 'resubmit',
+        'esim': 'esim',
+        'switch': 'switch',
+        'human_intervention': 'human_intervention'
+    }
+)
+
+for step in ['resubmit', 'esim', 'switch']:
+    workflow.add_edge(step, "validation_check")
+
+workflow.add_conditional_edges(
+    "validation_check",
+    lambda s: s['current_step'],
+    {'complete': 'complete', 'human_intervention': 'human_intervention'}
+)
+
+workflow.add_edge("human_intervention", "complete")
+
+
+
+
+
+def test_order(order_id):
+    print(f"\n⚡ Testing {order_id}")
+    state = create_initial_state(order_id)
+    
+    for step in app.stream(state):
+        print(f"\n[{step['current_step'].upper()}]")
+        print(f"Problem: {step.get('problem_description', '')}")
+        print(f"Action: {step.get('action_taken', '')}")
+        print(f"Validation: {step.get('validation_status', '')}")
+    
+    print("\n✅ Test Complete")
+    print("Final Status:", system.get_status(order_id))
+    print("="*60)
+
+test_order("ORD123")
+test_order("ORD456")
