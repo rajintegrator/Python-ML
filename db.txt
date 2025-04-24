@@ -854,3 +854,90 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+=======================
+
+def human_review_agent(state: AgentState):
+    """
+    Agent that prepares cases for human review and pauses for input.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    # Get order details
+    order_details = tools.get_order_details(order_id)
+    resolution_history = tools.get_resolution_history(order_id)
+    
+    # Create human review prompt
+    human_prompt = ChatPromptTemplate.from_template(HUMAN_SYSTEM_PROMPT)
+    
+    # Prepare formatted data
+    formatted_order_details = json.dumps(order_details, indent=2)
+    formatted_history = json.dumps(resolution_history, indent=2) if resolution_history else "No prior resolution attempts"
+    
+    # Get analysis from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(human_prompt.format(
+        order_id=order_id,
+        order_details=formatted_order_details,
+        resolution_history=formatted_history
+    ))
+    
+    # Record escalation reason (for logging)
+    escalation_reason = f"Complex issue requiring human review: {response.content[:100]}..."
+    result = tools.escalate_to_human(order_id, escalation_reason)
+    
+    # Update state for next step (human input handler)
+    return {
+        "issue_detected": state.get("issue_detected", "Unknown"),
+        "resolution_details": f"Escalated to human team: {result}",
+        "resolution_status": "waiting_input",
+        "actions_taken": state.get("actions_taken", []) + ["Prepared for human review with detailed analysis"],
+        "next_agent": "human_input",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "human_agent_analysis": response.content,
+            "escalation_result": result
+        }
+    }
+
+
+================
+
+def human_input_processor(state: AgentState):
+    """
+    Agent that accepts human input (approve/reject) and finalizes resolution.
+    """
+    print(f"\n🔔 HUMAN INPUT REQUIRED for Order ID: {state['order_id']}")
+    print("📋 Summary of the Issue:")
+    print(state["debug_info"].get("human_agent_analysis", "No analysis available."))
+
+    # Prompt the human agent for decision
+    user_decision = input("👉 Please enter your decision (approve / reject): ").strip().lower()
+
+    if user_decision == "approve":
+        resolution_status = "resolved"
+        resolution_details = "Human approved the resolution. Case closed successfully."
+    elif user_decision == "reject":
+        resolution_status = "escalated"
+        resolution_details = "Human rejected the resolution. Further escalation needed."
+    else:
+        resolution_status = "escalated"
+        resolution_details = f"Unrecognized input '{user_decision}'. Defaulting to escalation."
+
+    return {
+        "issue_detected": state.get("issue_detected", "Unknown"),
+        "resolution_status": resolution_status,
+        "resolution_details": resolution_details,
+        "actions_taken": state.get("actions_taken", []) + [f"Human decision: {user_decision}"],
+        "next_agent": "completed",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "human_decision": user_decision
+        }
+    }
+workflow.add_node("human_input", human_input_processor)
+workflow.add_edge("human", "human_input")
+workflow.add_edge("human_input", END)
