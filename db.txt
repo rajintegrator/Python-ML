@@ -1,97 +1,856 @@
-# ========== 1. STATE DEFINITION (REVISED) ==========
+# Telecom Order Fallout Resolution System with LangGraph
+# Enhanced Multi-Agent Framework for Automated Issue Resolution
+
+import sqlite3
+from typing import TypedDict, Annotated, Literal, List, Dict, Any
+from datetime import datetime
+import pandas as pd
+import json
+import os
+
+# LangGraph imports
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.chat_models import ChatOllama  # Using local Ollama
+
+# Optional: For improved visualization
+import matplotlib.pyplot as plt
+from IPython.display import display, HTML, Image
+
+# =============== DATABASE SETUP ===============
+
+class TelecomDatabase:
+    def __init__(self, db_path='telecom.db'):
+        """Initialize the telecom database with proper schema."""
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+        self._create_schema()
+        
+    def _create_schema(self):
+        """Create the necessary tables if they don't exist."""
+        # Orders table - stores all order information
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orders (
+                order_id TEXT PRIMARY KEY,
+                customer_id TEXT,
+                product_type TEXT,
+                activation_status TEXT,
+                esim_status TEXT,
+                switch_status TEXT,
+                issue_type TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Fallouts table - tracks resolution attempts
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS fallouts (
+                fallout_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id TEXT,
+                agent_type TEXT,
+                resolution_type TEXT,
+                resolution_details TEXT,
+                status TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders (order_id)
+            )
+        ''')
+        
+        # Customer table - additional context
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                customer_id TEXT PRIMARY KEY,
+                name TEXT,
+                account_type TEXT,
+                priority_level INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Resolution history - track all steps in resolution process
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS resolution_steps (
+                step_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fallout_id INTEGER,
+                agent_type TEXT,
+                action_taken TEXT,
+                result TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (fallout_id) REFERENCES fallouts (fallout_id)
+            )
+        ''')
+        
+        self.conn.commit()
+    
+    def insert_sample_data(self):
+        """Insert sample data for testing purposes."""
+        # Sample orders with various issues
+        orders = [
+            ('ORD123', 'CUST001', 'Postpaid', 'not_sent', 'active', 'ok', 'activation_issue'),
+            ('ORD456', 'CUST002', 'Prepaid', 'sent', 'failed', 'ok', 'esim_issue'),
+            ('ORD789', 'CUST003', 'Postpaid', 'sent', 'active', 'error', 'switch_issue'),
+            ('ORD999', 'CUST004', 'Prepaid', 'sent', 'active', 'ok', 'unknown_issue'),
+            ('ORD555', 'CUST005', 'Postpaid', 'not_sent', 'failed', 'error', 'multiple_issues'),
+            ('ORD777', 'CUST003', 'Postpaid', 'sent', 'pending', 'pending', 'partial_activation')
+        ]
+        
+        # Clear existing data
+        self.cursor.execute('DELETE FROM orders')
+        
+        # Insert orders
+        self.cursor.executemany(
+            'INSERT INTO orders (order_id, customer_id, product_type, activation_status, esim_status, switch_status, issue_type) VALUES (?,?,?,?,?,?,?)', 
+            orders
+        )
+        
+        # Sample customers
+        customers = [
+            ('CUST001', 'Alice Smith', 'Individual', 1),
+            ('CUST002', 'Bob Johnson', 'Business', 2),
+            ('CUST003', 'Charlie Brown', 'Individual', 3),
+            ('CUST004', 'Diana Prince', 'Business', 1),
+            ('CUST005', 'Edward Wilson', 'VIP', 1)
+        ]
+        
+        # Clear existing data
+        self.cursor.execute('DELETE FROM customers')
+        
+        # Insert customers
+        self.cursor.executemany(
+            'INSERT INTO customers (customer_id, name, account_type, priority_level) VALUES (?,?,?,?)', 
+            customers
+        )
+        
+        self.conn.commit()
+        print("Sample data inserted successfully")
+    
+    def close(self):
+        """Close the database connection."""
+        self.conn.close()
+
+# =============== TELECOM TOOLS ===============
+
+class TelecomTools:
+    """Tools for interacting with telecom systems and database."""
+    
+    def __init__(self, db_path='telecom.db'):
+        self.conn = sqlite3.connect(db_path)
+        self.cursor = self.conn.cursor()
+    
+    def get_order_details(self, order_id: str) -> dict:
+        """Get all details for a specific order."""
+        self.cursor.execute('SELECT * FROM orders WHERE order_id = ?', (order_id,))
+        columns = [description[0] for description in self.cursor.description]
+        row = self.cursor.fetchone()
+        
+        if not row:
+            return {"error": f"Order {order_id} not found"}
+        
+        order_details = dict(zip(columns, row))
+        
+        # Also get customer details
+        customer_id = order_details.get('customer_id')
+        if customer_id:
+            self.cursor.execute('SELECT * FROM customers WHERE customer_id = ?', (customer_id,))
+            customer_columns = [description[0] for description in self.cursor.description]
+            customer_row = self.cursor.fetchone()
+            if customer_row:
+                customer_details = dict(zip(customer_columns, customer_row))
+                order_details['customer'] = customer_details
+        
+        return order_details
+    
+    def check_activation_status(self, order_id: str) -> str:
+        """Check the activation status of an order."""
+        self.cursor.execute('SELECT activation_status FROM orders WHERE order_id = ?', (order_id,))
+        result = self.cursor.fetchone()
+        if not result:
+            return "not_found"
+        return result[0]
+    
+    def mark_for_resubmission(self, order_id: str) -> str:
+        """Mark an order for activation resubmission."""
+        try:
+            # Update order status
+            self.cursor.execute('UPDATE orders SET activation_status = "pending", last_updated = CURRENT_TIMESTAMP WHERE order_id = ?', (order_id,))
+            
+            # Log the fallout resolution attempt
+            self.cursor.execute('''
+                INSERT INTO fallouts (order_id, agent_type, resolution_type, resolution_details, status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (order_id, 'resubmission', 'activation_retry', 'Order marked for reactivation', 'pending'))
+            
+            fallout_id = self.cursor.lastrowid
+            
+            # Log the resolution step
+            self.cursor.execute('''
+                INSERT INTO resolution_steps (fallout_id, agent_type, action_taken, result)
+                VALUES (?, ?, ?, ?)
+            ''', (fallout_id, 'resubmission', 'mark_for_resubmission', 'Order queued for reactivation'))
+            
+            self.conn.commit()
+            return f"Order {order_id} marked for resubmission. Fallout ID: {fallout_id}"
+        except Exception as e:
+            self.conn.rollback()
+            return f"Error marking order {order_id} for resubmission: {str(e)}"
+    
+    def check_esim_status(self, order_id: str) -> str:
+        """Check the eSIM status of an order."""
+        self.cursor.execute('SELECT esim_status FROM orders WHERE order_id = ?', (order_id,))
+        result = self.cursor.fetchone()
+        if not result:
+            return "not_found"
+        return result[0]
+    
+    def reprovision_esim(self, order_id: str) -> str:
+        """Reprovision eSIM for an order."""
+        try:
+            # Update eSIM status
+            self.cursor.execute('UPDATE orders SET esim_status = "reprovisioned", last_updated = CURRENT_TIMESTAMP WHERE order_id = ?', (order_id,))
+            
+            # Log the fallout resolution attempt
+            self.cursor.execute('''
+                INSERT INTO fallouts (order_id, agent_type, resolution_type, resolution_details, status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (order_id, 'esim', 'esim_reprovision', 'eSIM reprovisioned', 'completed'))
+            
+            fallout_id = self.cursor.lastrowid
+            
+            # Log the resolution step
+            self.cursor.execute('''
+                INSERT INTO resolution_steps (fallout_id, agent_type, action_taken, result)
+                VALUES (?, ?, ?, ?)
+            ''', (fallout_id, 'esim', 'reprovision_esim', 'New eSIM profile generated and activated'))
+            
+            self.conn.commit()
+            return f"eSIM reprovisioned for order {order_id}. Fallout ID: {fallout_id}"
+        except Exception as e:
+            self.conn.rollback()
+            return f"Error reprovisioning eSIM for order {order_id}: {str(e)}"
+    
+    def check_switch_status(self, order_id: str) -> str:
+        """Check the switch status of an order."""
+        self.cursor.execute('SELECT switch_status FROM orders WHERE order_id = ?', (order_id,))
+        result = self.cursor.fetchone()
+        if not result:
+            return "not_found"
+        return result[0]
+    
+    def reprovision_switch(self, order_id: str) -> str:
+        """Reconfigure switch for an order."""
+        try:
+            # Update switch status
+            self.cursor.execute('UPDATE orders SET switch_status = "reconfigured", last_updated = CURRENT_TIMESTAMP WHERE order_id = ?', (order_id,))
+            
+            # Log the fallout resolution attempt
+            self.cursor.execute('''
+                INSERT INTO fallouts (order_id, agent_type, resolution_type, resolution_details, status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (order_id, 'switch', 'switch_reconfiguration', 'Switch reconfigured', 'completed'))
+            
+            fallout_id = self.cursor.lastrowid
+            
+            # Log the resolution step
+            self.cursor.execute('''
+                INSERT INTO resolution_steps (fallout_id, agent_type, action_taken, result)
+                VALUES (?, ?, ?, ?)
+            ''', (fallout_id, 'switch', 'reprovision_switch', 'Network switch reconfigured for the service'))
+            
+            self.conn.commit()
+            return f"Switch reconfigured for order {order_id}. Fallout ID: {fallout_id}"
+        except Exception as e:
+            self.conn.rollback()
+            return f"Error reconfiguring switch for order {order_id}: {str(e)}"
+    
+    def escalate_to_human(self, order_id: str, reason: str) -> str:
+        """Escalate an order to human review."""
+        try:
+            # Log the fallout escalation
+            self.cursor.execute('''
+                INSERT INTO fallouts (order_id, agent_type, resolution_type, resolution_details, status)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (order_id, 'human_escalation', 'manual_review', ?, 'escalated'))
+            ''', (order_id, 'human_escalation', 'manual_review', reason, 'escalated'))
+            
+            fallout_id = self.cursor.lastrowid
+            
+            # Log the resolution step
+            self.cursor.execute('''
+                INSERT INTO resolution_steps (fallout_id, agent_type, action_taken, result)
+                VALUES (?, ?, ?, ?)
+            ''', (fallout_id, 'human', 'escalate', f'Escalated to human team: {reason}'))
+            
+            self.conn.commit()
+            return f"Order {order_id} escalated to human team. Fallout ID: {fallout_id}"
+        except Exception as e:
+            self.conn.rollback()
+            return f"Error escalating order {order_id}: {str(e)}"
+    
+    def get_resolution_history(self, order_id: str) -> List[Dict]:
+        """Get the resolution history for an order."""
+        self.cursor.execute('''
+            SELECT f.fallout_id, f.agent_type, f.resolution_type, f.status, 
+                   rs.action_taken, rs.result, rs.timestamp
+            FROM fallouts f
+            JOIN resolution_steps rs ON f.fallout_id = rs.fallout_id
+            WHERE f.order_id = ?
+            ORDER BY rs.timestamp ASC
+        ''', (order_id,))
+        
+        columns = [description[0] for description in self.cursor.description]
+        rows = self.cursor.fetchall()
+        
+        history = [dict(zip(columns, row)) for row in rows]
+        return history
+    
+    def close(self):
+        """Close the database connection."""
+        self.conn.close()
+
+# =============== AGENT STATE DEFINITIONS ===============
+
 class AgentState(TypedDict):
+    """Define the state object passed between agents."""
     order_id: str
-    current_step: Literal[
-        'start',
-        'analyze',
-        'resubmit', 
-        'esim', 
-        'switch', 
-        'validation_check',
-        'human_intervention',
-        'complete'
-    ]
-    problem_description: str
-    action_taken: str
-    validation_status: str
-    attempt_count: int
+    issue_detected: Annotated[str, "Issue type detected by master agent"]
+    actions_taken: List[str]
+    resolution_status: Literal["pending", "in_progress", "resolved", "escalated"]
+    resolution_details: Annotated[str, "Final resolution details"]
+    next_agent: Literal["master", "resubmission", "esim", "switch", "human", "completed"]
+    debug_info: Dict[str, Any]
 
-def create_initial_state(order_id: str) -> AgentState:
-    return {
-        'order_id': order_id,
-        'current_step': 'start',
-        'problem_description': '',
-        'action_taken': '',
-        'validation_status': '',
-        'attempt_count': 0
-    }
+# =============== AGENT PROMPTS ===============
 
-# ========== 2. WORKFLOW NODES (UPDATED NAMES) ==========
-workflow = StateGraph(AgentState)
+# Master Agent System Prompt
+MASTER_SYSTEM_PROMPT = """You are the Master Agent in a telecom order management system responsible for analyzing issues and routing to the appropriate specialist agent.
 
-workflow.add_node("start", lambda s: {'current_step': 'analyze'})
-workflow.add_node("analyze", analyze_agent)
-workflow.add_node("resubmit", resubmit_agent)
-workflow.add_node("esim", esim_agent)
-workflow.add_node("switch", switch_agent)
-workflow.add_node("validation_check", validate_agent)  # Renamed node
-workflow.add_node("human_intervention", human_agent)    # Renamed node
-workflow.add_node("complete", END)
+Your task is to analyze the provided order details and determine the most likely issue type:
 
-# ========== 3. VALIDATION AGENT (FIXED KEY) ==========
-@state_protector
-def validate_agent(state: AgentState) -> AgentState:
-    status = system.get_status(state['order_id'])
-    valid = all([
-        status['activation'] == 'pending',
-        status['esim'] == 'reprovisioned',
-        status['switch'] == 'reconfigured'
-    ])
-    return {
-        'current_step': 'complete' if valid else 'human_intervention',
-        'validation_status': 'Success' if valid else 'Failed'  # Correct key
-    }
+1. ACTIVATION ISSUE: If activation_status is "not_sent" - route to resubmission agent
+2. ESIM ISSUE: If esim_status is "failed" - route to eSIM agent
+3. SWITCH ISSUE: If switch_status is "error" - route to switch agent
+4. MULTIPLE ISSUES: If multiple issues detected, route to the most critical one first (switch > esim > activation)
+5. UNKNOWN ISSUE: If you can't determine the specific issue or it doesn't fit the above categories - route to human
 
-# ========== 4. WORKFLOW TRANSITIONS (UPDATED) ==========
-workflow.add_conditional_edges(
-    "analyze",
-    lambda s: s['current_step'],
-    {
-        'resubmit': 'resubmit',
-        'esim': 'esim',
-        'switch': 'switch',
-        'human_intervention': 'human_intervention'
-    }
-)
+ORDER DETAILS:
+```
+{order_details}
+```
 
-for step in ['resubmit', 'esim', 'switch']:
-    workflow.add_edge(step, "validation_check")
+Analyze the order data carefully and respond with ONLY ONE of these exact routing decisions:
+- resubmission (for activation issues)
+- esim (for eSIM provisioning issues)
+- switch (for network switch issues) 
+- human (for complex or unknown issues)
 
-workflow.add_conditional_edges(
-    "validation_check",
-    lambda s: s['current_step'],
-    {'complete': 'complete', 'human_intervention': 'human_intervention'}
-)
+DO NOT include explanations or any other text - ONLY provide the single word routing decision.
+"""
 
-workflow.add_edge("human_intervention", "complete")
+# Resubmission Agent System Prompt
+RESUBMISSION_SYSTEM_PROMPT = """You are the Resubmission Agent specializing in activation issues for telecom orders.
 
+Your task is to handle activation not sent issues for order {order_id}. The current activation status is: {activation_status}.
 
+ORDER DETAILS:
+```
+{order_details}
+```
 
+You must analyze the order and determine if resubmission is needed:
+1. If activation_status is "not_sent", the order needs to be resubmitted
+2. If activation_status is anything else, no resubmission is needed
 
+Provide a detailed analysis of what you're seeing and why you're taking specific actions.
+After your analysis, make a decision and take action:
 
-def test_order(order_id):
-    print(f"\n⚡ Testing {order_id}")
-    state = create_initial_state(order_id)
+1. If resubmission is needed, call the mark_for_resubmission tool
+2. If no resubmission is needed, explain why and mark as resolved
+
+Be thorough in your assessment and clear in your recommendations.
+"""
+
+# eSIM Agent System Prompt
+ESIM_SYSTEM_PROMPT = """You are the eSIM Agent specializing in electronic SIM provisioning issues for telecom orders.
+
+Your task is to handle eSIM issues for order {order_id}. The current eSIM status is: {esim_status}.
+
+ORDER DETAILS:
+```
+{order_details}
+```
+
+You must analyze the order and determine if eSIM reprovisioning is needed:
+1. If esim_status is "failed", the eSIM needs to be reprovisioned
+2. If esim_status is anything else, no reprovisioning is needed
+
+Provide a detailed analysis of what you're seeing and why you're taking specific actions.
+After your analysis, make a decision and take action:
+
+1. If reprovisioning is needed, call the reprovision_esim tool
+2. If no reprovisioning is needed, explain why and mark as resolved
+
+Be thorough in your assessment and clear in your recommendations.
+"""
+
+# Switch Agent System Prompt
+SWITCH_SYSTEM_PROMPT = """You are the Switch Agent specializing in network switch configuration issues for telecom orders.
+
+Your task is to handle switch issues for order {order_id}. The current switch status is: {switch_status}.
+
+ORDER DETAILS:
+```
+{order_details}
+```
+
+You must analyze the order and determine if switch reconfiguration is needed:
+1. If switch_status is "error", the switch needs to be reconfigured
+2. If switch_status is anything else, no reconfiguration is needed
+
+Provide a detailed analysis of what you're seeing and why you're taking specific actions.
+After your analysis, make a decision and take action:
+
+1. If reconfiguration is needed, call the reprovision_switch tool
+2. If no reconfiguration is needed, explain why and mark as resolved
+
+Be thorough in your assessment and clear in your recommendations.
+"""
+
+# Human Review Agent System Prompt
+HUMAN_SYSTEM_PROMPT = """You are the Human Escalation Agent responsible for preparing cases that require human intervention.
+
+Your task is to analyze complex issues for order {order_id} that could not be resolved automatically.
+
+ORDER DETAILS:
+```
+{order_details}
+```
+
+RESOLUTION HISTORY:
+```
+{resolution_history}
+```
+
+You must:
+1. Summarize the issue clearly
+2. Detail all automatic resolution attempts already made
+3. Explain why this requires human intervention
+4. Recommend possible actions for the human agent to take
+
+Provide comprehensive context so the human agent can quickly understand and address the issue.
+"""
+
+# =============== AGENT FUNCTIONS ===============
+
+def master_agent(state: AgentState):
+    """
+    Master agent that analyzes order details and routes to appropriate specialist agent.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
     
-    for step in app.stream(state):
-        print(f"\n[{step['current_step'].upper()}]")
-        print(f"Problem: {step.get('problem_description', '')}")
-        print(f"Action: {step.get('action_taken', '')}")
-        print(f"Validation: {step.get('validation_status', '')}")
+    # Get comprehensive order details
+    order_details = tools.get_order_details(order_id)
     
-    print("\n✅ Test Complete")
-    print("Final Status:", system.get_status(order_id))
-    print("="*60)
+    # Create the master prompt
+    master_prompt = ChatPromptTemplate.from_template(MASTER_SYSTEM_PROMPT)
+    
+    # Prepare formatted order details
+    formatted_order_details = json.dumps(order_details, indent=2)
+    
+    # Get routing decision from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(master_prompt.format(order_details=formatted_order_details))
+    
+    # Extract the routing decision
+    next_agent = response.content.strip().lower()
+    
+    # Update state with issue detection and debugging info
+    return {
+        "issue_detected": f"Detected {next_agent} issue", 
+        "next_agent": next_agent,
+        "actions_taken": state.get("actions_taken", []) + ["Issue analysis by master agent"],
+        "resolution_status": "in_progress",
+        "debug_info": {
+            "master_agent_output": next_agent,
+            "order_details": order_details
+        }
+    }
 
-test_order("ORD123")
-test_order("ORD456")
+def resubmission_agent(state: AgentState):
+    """
+    Agent that handles activation not sent issues.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    # Get order details and current status
+    order_details = tools.get_order_details(order_id)
+    activation_status = tools.check_activation_status(order_id)
+    
+    # Create resubmission prompt
+    resubmission_prompt = ChatPromptTemplate.from_template(RESUBMISSION_SYSTEM_PROMPT)
+    
+    # Prepare formatted order details
+    formatted_order_details = json.dumps(order_details, indent=2)
+    
+    # Get analysis from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(resubmission_prompt.format(
+        order_id=order_id,
+        activation_status=activation_status,
+        order_details=formatted_order_details
+    ))
+    
+    # Take action based on activation status
+    if activation_status == "not_sent":
+        result = tools.mark_for_resubmission(order_id)
+        resolution_details = f"Activation issue resolved: {result}"
+        resolution_status = "resolved"
+    else:
+        resolution_details = f"No activation resubmission needed. Current status: {activation_status}"
+        resolution_status = "resolved"
+    
+    # Update state
+    return {
+        "resolution_details": resolution_details,
+        "resolution_status": resolution_status,
+        "actions_taken": state.get("actions_taken", []) + [f"Resubmission agent: {resolution_details}"],
+        "next_agent": "completed",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "resubmission_agent_analysis": response.content,
+            "activation_status": activation_status
+        }
+    }
+
+def esim_agent(state: AgentState):
+    """
+    Agent that handles eSIM provisioning issues.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    # Get order details and current status
+    order_details = tools.get_order_details(order_id)
+    esim_status = tools.check_esim_status(order_id)
+    
+    # Create eSIM prompt
+    esim_prompt = ChatPromptTemplate.from_template(ESIM_SYSTEM_PROMPT)
+    
+    # Prepare formatted order details
+    formatted_order_details = json.dumps(order_details, indent=2)
+    
+    # Get analysis from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(esim_prompt.format(
+        order_id=order_id,
+        esim_status=esim_status,
+        order_details=formatted_order_details
+    ))
+    
+    # Take action based on eSIM status
+    if esim_status == "failed":
+        result = tools.reprovision_esim(order_id)
+        resolution_details = f"eSIM issue resolved: {result}"
+        resolution_status = "resolved"
+    else:
+        resolution_details = f"No eSIM reprovisioning needed. Current status: {esim_status}"
+        resolution_status = "resolved"
+    
+    # Update state
+    return {
+        "resolution_details": resolution_details,
+        "resolution_status": resolution_status,
+        "actions_taken": state.get("actions_taken", []) + [f"eSIM agent: {resolution_details}"],
+        "next_agent": "completed",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "esim_agent_analysis": response.content,
+            "esim_status": esim_status
+        }
+    }
+
+def switch_agent(state: AgentState):
+    """
+    Agent that handles switch configuration issues.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    # Get order details and current status
+    order_details = tools.get_order_details(order_id)
+    switch_status = tools.check_switch_status(order_id)
+    
+    # Create switch prompt
+    switch_prompt = ChatPromptTemplate.from_template(SWITCH_SYSTEM_PROMPT)
+    
+    # Prepare formatted order details
+    formatted_order_details = json.dumps(order_details, indent=2)
+    
+    # Get analysis from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(switch_prompt.format(
+        order_id=order_id,
+        switch_status=switch_status,
+        order_details=formatted_order_details
+    ))
+    
+    # Take action based on switch status
+    if switch_status == "error":
+        result = tools.reprovision_switch(order_id)
+        resolution_details = f"Switch issue resolved: {result}"
+        resolution_status = "resolved"
+    else:
+        resolution_details = f"No switch reconfiguration needed. Current status: {switch_status}"
+        resolution_status = "resolved"
+    
+    # Update state
+    return {
+        "resolution_details": resolution_details,
+        "resolution_status": resolution_status,
+        "actions_taken": state.get("actions_taken", []) + [f"Switch agent: {resolution_details}"],
+        "next_agent": "completed",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "switch_agent_analysis": response.content,
+            "switch_status": switch_status
+        }
+    }
+
+def human_review_agent(state: AgentState):
+    """
+    Agent that prepares cases for human review.
+    """
+    # Initialize tools
+    tools = TelecomTools()
+    order_id = state["order_id"]
+    
+    # Get order details
+    order_details = tools.get_order_details(order_id)
+    resolution_history = tools.get_resolution_history(order_id)
+    
+    # Create human review prompt
+    human_prompt = ChatPromptTemplate.from_template(HUMAN_SYSTEM_PROMPT)
+    
+    # Prepare formatted data
+    formatted_order_details = json.dumps(order_details, indent=2)
+    formatted_history = json.dumps(resolution_history, indent=2) if resolution_history else "No prior resolution attempts"
+    
+    # Get analysis from LLM
+    model = ChatOllama(model="llama2", temperature=0)
+    response = model.invoke(human_prompt.format(
+        order_id=order_id,
+        order_details=formatted_order_details,
+        resolution_history=formatted_history
+    ))
+    
+    # Record escalation
+    escalation_reason = f"Complex issue requiring human review: {response.content[:100]}..."
+    result = tools.escalate_to_human(order_id, escalation_reason)
+    
+    # Update state
+    return {
+        "resolution_details": f"Escalated to human team: {result}",
+        "resolution_status": "escalated",
+        "actions_taken": state.get("actions_taken", []) + ["Prepared for human review with detailed analysis"],
+        "next_agent": "completed",
+        "debug_info": {
+            **state.get("debug_info", {}),
+            "human_agent_analysis": response.content,
+            "escalation_result": result
+        }
+    }
+
+# =============== LANGGRAPH WORKFLOW ===============
+
+def build_telecom_workflow():
+    """Build and return the LangGraph workflow for telecom order resolution."""
+    
+    # Create the state graph
+    workflow = StateGraph(AgentState)
+    
+    # Add nodes
+    workflow.add_node("master", master_agent)
+    workflow.add_node("resubmission", resubmission_agent)
+    workflow.add_node("esim", esim_agent)
+    workflow.add_node("switch", switch_agent)
+    workflow.add_node("human", human_review_agent)
+    
+    # Set entry point
+    workflow.set_entry_point("master")
+    
+    # Define conditional edges from master agent
+    workflow.add_conditional_edges(
+        "master",
+        lambda state: state["next_agent"],
+        {
+            "resubmission": "resubmission",
+            "esim": "esim",
+            "switch": "switch",
+            "human": "human",
+            "completed": END  # Unlikely but handling for completeness
+        }
+    )
+    
+    # Add edges from specialist agents to end
+    for agent in ["resubmission", "esim", "switch", "human"]:
+        workflow.add_edge(agent, END)
+    
+    # Compile the graph
+    return workflow.compile()
+
+# =============== VISUALIZATION AND TESTING ===============
+
+def visualize_workflow(app):
+    """Generate and display a visualization of the workflow."""
+    try:
+        # Generate Mermaid diagram
+        mermaid_png = app.get_graph().draw_mermaid_png()
+        display(Image(mermaid_png))
+    except Exception as e:
+        print(f"Error generating visualization: {str(e)}")
+        print("Falling back to text representation:")
+        print(app.get_graph())
+
+def run_test_case(app, order_id, verbose=True):
+    """Run a test case through the workflow."""
+    print(f"\n{'='*60}")
+    print(f"Processing order {order_id}:")
+    print(f"{'='*60}")
+    
+    # Initialize state
+    initial_state = {
+        "order_id": order_id,
+        "issue_detected": "",
+        "actions_taken": [],
+        "resolution_status": "pending",
+        "resolution_details": "",
+        "next_agent": "",
+        "debug_info": {}
+    }
+    
+    # Process steps
+    steps = []
+    for step in app.stream(initial_state):
+        steps.append(step)
+        if verbose:
+            print(f"\n{'>'*10} STEP {len(steps)} {'<'*10}")
+            for key, value in step.items():
+                if key != "debug_info":  # Skip debug info in verbose output
+                    if isinstance(value, list):
+                        print(f"{key}:")
+                        for item in value:
+                            print(f"  - {item}")
+                    else:
+                        print(f"{key}: {value}")
+    
+    # Print final state
+    final_state = steps[-1] if steps else initial_state
+    print(f"\n{'='*20} FINAL RESOLUTION {'='*20}")
+    print(f"Order ID: {order_id}")
+    print(f"Issue Detected: {final_state.get('issue_detected', 'Unknown')}")
+    print(f"Resolution Status: {final_state.get('resolution_status', 'Unknown')}")
+    print(f"Resolution Details: {final_state.get('resolution_details', 'No details provided')}")
+    
+    print("\nActions Taken:")
+    for action in final_state.get('actions_taken', []):
+        print(f"- {action}")
+    
+    print(f"\n{'='*60}")
+    
+    return final_state
+
+def analyze_results(db_path='telecom.db'):
+    """Analyze and visualize results from the database."""
+    conn = sqlite3.connect(db_path)
+    
+    # Get fallout statistics
+    fallouts_df = pd.read_sql('''
+        SELECT agent_type, resolution_type, status, COUNT(*) as count
+        FROM fallouts
+        GROUP BY agent_type, resolution_type, status
+    ''', conn)
+    
+    # Get order issues
+    orders_df = pd.read_sql('''
+        SELECT issue_type, COUNT(*) as count
+        FROM orders
+        GROUP BY issue_type
+    ''', conn)
+    
+    # Display results
+    print("\n=== Fallout Resolution Statistics ===")
+    print(fallouts_df)
+    
+    print("\n=== Order Issue Types ===")
+    print(orders_df)
+    
+    # Create simple visualizations
+    try:
+        plt.figure(figsize=(12, 10))
+        
+        # Plot fallouts by agent type
+        plt.subplot(2, 2, 1)
+        fallouts_by_agent = fallouts_df.groupby('agent_type')['count'].sum()
+        fallouts_by_agent.plot(kind='bar')
+        plt.title('Fallouts by Agent Type')
+        plt.ylabel('Count')
+        
+        # Plot fallouts by status
+        plt.subplot(2, 2, 2)
+        fallouts_by_status = fallouts_df.groupby('status')['count'].sum()
+        fallouts_by_status.plot(kind='pie', autopct='%1.1f%%')
+        plt.title('Fallouts by Resolution Status')
+        
+        # Plot order issues
+        plt.subplot(2, 1, 2)
+        orders_df.plot(kind='bar', x='issue_type', y='count')
+        plt.title('Order Issues by Type')
+        plt.ylabel('Count')
+        
+        plt.tight_layout()
+        plt.show()
+    except Exception as e:
+        print(f"Error creating visualizations: {str(e)}")
+    
+    conn.close()
+
+# =============== MAIN EXECUTION ===============
+
+def main():
+    """Main function to run the telecom order resolution workflow."""
+    print("\n=== Telecom Order Fallout Resolution System ===\n")
+    
+    # Initialize database with sample data
+    print("Initializing database...")
+    db = TelecomDatabase()
+    db.insert_sample_data()
+    db.close()
+    
+    # Build the workflow
+    print("\nBuilding LangGraph workflow...")
+    app = build_telecom_workflow()
+    
+    # Visualize the workflow
+    print("\nWorkflow visualization:")
+    visualize_workflow(app)
+    
+    # Run test cases
+    test_orders = ['ORD123', 'ORD456', 'ORD789', 'ORD999', 'ORD555']
+    
+    for order_id in test_orders:
+        run_test_case(app, order_id)
+    
+    # Analyze results
+    analyze_results()
+    
+    print("\n=== Telecom Order Fallout Resolution Complete ===")
+
+if __name__ == "__main__":
+    main()
