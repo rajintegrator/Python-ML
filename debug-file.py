@@ -117,28 +117,16 @@ def analyze_single_page(image_data: bytes, mime_type: str, page_num: int, total_
     """Analyze a single page/image"""
     current_date_str = datetime.now().strftime("%B %d, %Y")
     
-    # Use your original system prompt for single page
+    # Test with a very simple prompt first
     system_prompt = SystemMessage(
-        content=(
-            "You are an expert analyst for Verizon's new customer promotion program.\n"
-            f"The current date is {current_date_str}.\n\n"
-            f"You are analyzing page {page_num} of {total_pages} from a competitor's bill.\n\n"
-            "INSTRUCTIONS:\n"
-            "1. Analyze the image to find the 'Device Loan Payoff', 'Installment History', and 'Bill Date'.\n"
-            "2. Your final output MUST be a markdown table with three columns: 'Criteria Check', 'Details Found in Bill', and 'Status'.\n"
-            "3. For the 'Loan Payoff Amount' row, state the found amount in the details column. In the 'Status' column, use ☑ if the amount is <= $800, otherwise ❌.\n"
-            "4. For the 'Installment History', state the installment number (e.g., '14 of 36') in the details column. In the 'Status' column, use ☑ if the installment is 4 or greater, ❌ if not.\n"
-            "5. For the 'Bill Date', state the 'Issue Date' in the details column. Use ☑ if within 30 days of today, ❌ if not.\n"
-            "6. If any information cannot be found, note it in the 'Details' column and use ❌ in the 'Status' column.\n"
-            "7. After the table, on a new line, you MUST provide a Final Recommendation: either **Final Recommendation: QUALIFIED** if all checks pass, or **Final Recommendation: NOT QUALIFIED** if any check fails.\n"
-        )
+        content="You are an AI assistant. Describe what you see in this image."
     )
     
     # Create the multimodal user message
     image_base64 = base64.b64encode(image_data).decode("utf-8")
     user_message = HumanMessage(
         content=[
-            {"type": "text", "text": f"Please analyze this bill page {page_num} and provide a structured eligibility report."},
+            {"type": "text", "text": "What do you see in this image?"},
             {
                 "type": "image_url",
                 "image_url": {
@@ -149,18 +137,31 @@ def analyze_single_page(image_data: bytes, mime_type: str, page_num: int, total_
     )
     
     # Call the LLM
-    print(f"---- Invoking AI Agent for page {page_num} ----")
+    print(f"---- Testing AI Agent with simple prompt for page {page_num} ----")
     try:
         response = llm.invoke([system_prompt, user_message])
         
-        # Debug info
-        print(f"Page {page_num} response type: {type(response)}")
+        # Comprehensive debugging
+        print(f"Response object: {response}")
+        print(f"Response type: {type(response)}")
+        print(f"Response dir: {[attr for attr in dir(response) if not attr.startswith('_')]}")
+        
         if hasattr(response, 'content'):
-            print(f"Page {page_num} content length: {len(response.content) if response.content else 0}")
+            print(f"Content: '{response.content}'")
+            print(f"Content type: {type(response.content)}")
+            print(f"Content length: {len(response.content) if response.content else 0}")
+        
+        # Try different possible attributes
+        for attr in ['content', 'text', 'message', 'response', 'output']:
+            if hasattr(response, attr):
+                value = getattr(response, attr)
+                print(f"Found {attr}: {value}")
         
         return response
     except Exception as e:
         print(f"Error analyzing page {page_num}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -216,30 +217,37 @@ def main():
     # Initialize your LLM
     llm = VegasChatLLM()
     
+    # Test LLM first
+    print("=== Testing LLM Configuration ===")
+    try:
+        test_response = llm.invoke([SystemMessage(content="Hello"), HumanMessage(content="Say hello back")])
+        print(f"LLM test response: {test_response}")
+        print(f"LLM test response type: {type(test_response)}")
+        if hasattr(test_response, 'content'):
+            print(f"LLM test content: '{test_response.content}'")
+    except Exception as e:
+        print(f"LLM test failed: {e}")
+        return
+    
     # ===== CONFIGURATION - UPDATE THESE PATHS =====
     
     # Option 1: Single image (your current working setup)
     bill_to_analyze = r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\7.png"
     
-    # Option 2: Multiple images
-    # bill_to_analyze = [
-    #     r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\page1.png",
-    #     r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\page2.png",
-    #     r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\page3.png"
-    # ]
-    
-    # Option 3: PDF file
-    # bill_to_analyze = r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\complete_bill.pdf"
-    
-    # Option 4: Mixed files
-    # bill_to_analyze = [
-    #     r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\bill.pdf",
-    #     r"C:\Users\goginra\Desktop\Rajesh\Projects\ACSS\Bill Insights\extra_page.png"
-    # ]
+    # Test file existence
+    if isinstance(bill_to_analyze, str):
+        if not os.path.exists(bill_to_analyze):
+            print(f"Error: File not found: {bill_to_analyze}")
+            return
+    elif isinstance(bill_to_analyze, list):
+        for file_path in bill_to_analyze:
+            if not os.path.exists(file_path):
+                print(f"Error: File not found: {file_path}")
+                return
     
     # ===============================================
     
-    query = "Please analyze all pages of this bill and provide a comprehensive eligibility report for ALL phone lines with device loans."
+    query = "Please analyze this bill."
     
     print(f"--- Analyzing: {bill_to_analyze} ---")
     
@@ -253,26 +261,44 @@ def main():
         print("\n--- Agent's Final Summary ---\n")
         
         # Enhanced output handling with debugging
+        if final_summary_object is None:
+            print("ERROR: Got None response from analyze_bill_with_llm")
+            return
+        
+        print(f"Final summary type: {type(final_summary_object)}")
+        print(f"Final summary object: {final_summary_object}")
+        
         if hasattr(final_summary_object, "content"):
             content = final_summary_object.content
             print(f"Content type: {type(content)}")
             print(f"Content length: {len(content) if content else 0}")
             
             if content:
+                print("=== CONTENT ===")
                 print(content)
+                print("=== END CONTENT ===")
             else:
-                print("Warning: Response content is empty!")
-                print("Full response object:")
-                print(final_summary_object)
+                print("WARNING: Response content is empty!")
+                
+                # Try to extract from other attributes
+                for attr in dir(final_summary_object):
+                    if not attr.startswith('_'):
+                        value = getattr(final_summary_object, attr)
+                        if isinstance(value, str) and value.strip():
+                            print(f"Found text in {attr}: {value}")
         else:
-            print(f"Response object type: {type(final_summary_object)}")
-            print("Available attributes:", [attr for attr in dir(final_summary_object) if not attr.startswith('_')])
-            print("Full response:")
-            print(final_summary_object)
+            print("No 'content' attribute found")
+            print(f"Available attributes: {[attr for attr in dir(final_summary_object) if not attr.startswith('_')]}")
+            
+            # Try to convert to string
+            str_response = str(final_summary_object)
+            if str_response and str_response != "None":
+                print(f"String representation: {str_response}")
             
     except Exception as e:
         print(f"Error during analysis: {e}")
-        print("Please check your file paths and ensure all files exist.")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
