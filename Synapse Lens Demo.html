@@ -1,0 +1,2037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synapse Lens - AI Customer Context Intelligence</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-blue: #1f8cd4;
+            --success-green: #27ae60;
+            --warning-orange: #f39c12;
+            --danger-red: #e74c3c;
+            --purple-accent: #8e44ad;
+            --text-light: #f0f0f0;
+            --text-dark: #a0a0a0;
+            --bg-dark-1: #1a1a2e;
+            --bg-dark-2: #16213e;
+            --bg-glass: rgba(255, 255, 255, 0.05);
+            --border-glass: rgba(255, 255, 255, 0.1);
+            --shadow-light: rgba(21, 139, 228, 0.5);
+            --gradient-primary: linear-gradient(135deg, var(--primary-blue), var(--purple-accent));
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, var(--bg-dark-1), var(--bg-dark-2));
+            color: var(--text-light);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            opacity: 0;
+            transform: translateY(-30px);
+            animation: fadeInDown 0.8s 0.2s ease-out forwards;
+        }
+
+        header h1 {
+            font-size: 3.2rem;
+            font-weight: 700;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        header .subtitle {
+            font-size: 1.3rem;
+            color: var(--text-dark);
+            max-width: 900px;
+            margin: 1rem auto 0;
+            font-weight: 300;
+        }
+
+        header .tagline {
+            font-size: 1rem;
+            color: var(--primary-blue);
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+
+        .demo-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 3rem;
+            padding: 1.5rem;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 16px;
+            backdrop-filter: blur(15px);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            transform: translateY(-30px);
+            animation: fadeInDown 0.8s 0.4s ease-out forwards;
+        }
+
+        .control-btn {
+            background: var(--gradient-primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.8rem;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px var(--shadow-light);
+        }
+        
+        #speed-controls button.active {
+            background: var(--success-green);
+            box-shadow: 0 0 20px rgba(39, 174, 96, 0.4);
+        }
+
+        .demo-section {
+            margin-bottom: 4rem;
+            position: relative;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s ease;
+        }
+
+        .section-header.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .section-header h2 {
+            font-size: 2.2rem;
+            color: var(--primary-blue);
+            margin-bottom: 0.5rem;
+        }
+
+        .section-header p {
+            color: var(--text-dark);
+            font-size: 1.1rem;
+        }
+        
+        .explainer {
+            position: absolute;
+            top: 50%;
+            left: -320px;
+            width: 300px;
+            background: rgba(31, 140, 212, 0.15);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(31, 140, 212, 0.3);
+            border-left: 5px solid var(--primary-blue);
+            padding: 1.5rem;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            color: var(--text-light);
+            z-index: 100;
+            opacity: 0;
+            transform: translateX(-30px) scale(0.95);
+            transition: opacity 0.8s ease, transform 0.8s ease;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .explainer.visible {
+            opacity: 1;
+            transform: translateX(0) scale(1);
+        }
+        
+        .explainer h4 {
+            color: var(--primary-blue);
+            margin-bottom: 0.8rem;
+            font-size: 1.1rem;
+        }
+
+        .explainer .insight {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.8rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            border-left: 3px solid var(--warning-orange);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .grid-2 {
+            grid-template-columns: 1fr 2fr;
+        }
+
+        .grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .card {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 2rem;
+            backdrop-filter: blur(15px);
+            transition: all 0.8s ease;
+            opacity: 0;
+            transform: translateY(40px);
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--gradient-primary);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        .card-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--primary-blue);
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .card-title i {
+            font-size: 1.2rem;
+        }
+
+        /* Enhanced Customer Profile */
+        .customer-profile {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .avatar {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: var(--gradient-primary);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.8rem;
+            font-weight: bold;
+            color: white;
+            flex-shrink: 0;
+            box-shadow: 0 8px 25px rgba(31, 140, 212, 0.3);
+        }
+
+        .customer-details h3 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .customer-badges { 
+            display: flex; 
+            gap: 0.8rem; 
+            margin-top: 0.8rem; 
+        }
+        
+        .badge { 
+            background: var(--warning-orange); 
+            padding: 0.4rem 1rem; 
+            border-radius: 25px; 
+            font-size: 0.85rem; 
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .badge.premium {
+            background: linear-gradient(135deg, #c0c0c0, #silver);
+            color: #333;
+        }
+
+        /* Enhanced Risk Indicators */
+        .risk-indicators {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .risk-item {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            border: 1px solid var(--border-glass);
+        }
+
+        .risk-value {
+            font-size: 1.6rem;
+            font-weight: bold;
+            margin-bottom: 0.3rem;
+        }
+
+        .risk-value.high { color: var(--danger-red); }
+        .risk-value.medium { color: var(--warning-orange); }
+        .risk-value.low { color: var(--success-green); }
+
+        .risk-label {
+            font-size: 0.85rem;
+            color: var(--text-dark);
+        }
+
+        /* Frustration Meter Enhanced */
+        .frustration-meter { 
+            margin-top: 1.5rem;
+        }
+        
+        .frustration-meter .bar { 
+            width: 100%; 
+            background: #333; 
+            height: 15px; 
+            border-radius: 10px; 
+            overflow: hidden;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        
+        .frustration-meter .fill { 
+            width: 0%; 
+            height: 100%; 
+            background: linear-gradient(90deg, var(--warning-orange), var(--danger-red)); 
+            transition: width 2s ease-out;
+            position: relative;
+        }
+
+        .frustration-meter .fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .frustration-meter p { 
+            font-size: 1rem; 
+            margin-top: 0.8rem;
+            font-weight: 500;
+        }
+        
+        /* Enhanced Timeline */
+        .timeline { 
+            list-style: none; 
+            padding-left: 25px; 
+            border-left: 3px solid var(--border-glass); 
+            position: relative;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: -3px;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--gradient-primary);
+            transform: scaleY(0);
+            transform-origin: top;
+            transition: transform 3s ease;
+        }
+
+        .timeline.active::before {
+            transform: scaleY(1);
+        }
+        
+        .timeline-item { 
+            position: relative; 
+            margin-bottom: 2rem; 
+            opacity: 0; 
+            transform: translateX(30px); 
+            transition: all 0.8s ease; 
+            background: rgba(0, 0, 0, 0.2);
+            padding: 1.2rem;
+            border-radius: 12px;
+            border-left: 4px solid var(--primary-blue);
+        }
+        
+        .timeline-item.visible { 
+            opacity: 1; 
+            transform: translateX(0); 
+        }
+        
+        .timeline-item::before { 
+            content: ''; 
+            position: absolute; 
+            left: -37px; 
+            top: 15px; 
+            width: 20px; 
+            height: 20px; 
+            border-radius: 50%; 
+            background: var(--primary-blue); 
+            border: 4px solid var(--bg-dark-1); 
+            box-shadow: 0 0 0 3px var(--primary-blue);
+        }
+        
+        .timeline-item.error::before { 
+            background: var(--danger-red); 
+            box-shadow: 0 0 0 3px var(--danger-red);
+        }
+        
+        .timeline-item.warning::before { 
+            background: var(--warning-orange); 
+            box-shadow: 0 0 0 3px var(--warning-orange);
+        }
+
+        .timeline-item.success::before { 
+            background: var(--success-green); 
+            box-shadow: 0 0 0 3px var(--success-green);
+        }
+        
+        .timeline-icon { 
+            margin-right: 0.8rem; 
+            color: var(--primary-blue);
+        }
+        
+        .timeline-content { 
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .timeline-detail {
+            font-size: 0.9rem;
+            color: var(--text-dark);
+            margin-left: 1.5rem;
+        }
+        
+        .timeline-time { 
+            font-size: 0.85rem; 
+            color: var(--text-dark); 
+            display: block; 
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+
+        /* AI Processing Enhanced */
+        .ai-processing {
+            text-align: center;
+            padding: 2rem;
+        }
+
+        .processing-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        .processing-step {
+            text-align: center;
+            opacity: 0.3;
+            transition: all 0.5s ease;
+        }
+
+        .processing-step.active {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+
+        .processing-step i {
+            font-size: 2rem;
+            color: var(--primary-blue);
+            margin-bottom: 0.5rem;
+        }
+
+        .bouncing-loader { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            gap: 8px; 
+            margin: 1rem 0;
+        }
+        
+        .bouncing-loader div { 
+            width: 12px; 
+            height: 12px; 
+            background: var(--gradient-primary);
+            border-radius: 50%; 
+            animation: bouncing-loader 0.8s infinite alternate; 
+        }
+        
+        .bouncing-loader div:nth-child(2) { animation-delay: 0.2s; }
+        .bouncing-loader div:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes bouncing-loader { 
+            to { 
+                opacity: 0.3; 
+                transform: translateY(-15px); 
+            } 
+        }
+
+        /* Context Analysis Results */
+        .context-results {
+            display: none;
+        }
+
+        .context-results.visible {
+            display: block;
+        }
+
+        .insight-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .insight-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 1rem;
+            border-radius: 10px;
+            border-left: 4px solid var(--primary-blue);
+            transition: all 0.3s ease;
+        }
+
+        .insight-card:hover {
+            background: rgba(0, 0, 0, 0.4);
+            transform: translateX(5px);
+        }
+
+        .insight-card.critical {
+            border-left-color: var(--danger-red);
+        }
+
+        .insight-card.warning {
+            border-left-color: var(--warning-orange);
+        }
+
+        .insight-card.positive {
+            border-left-color: var(--success-green);
+        }
+
+        .confidence-score .bar { 
+            background: #333; 
+            height: 18px; 
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.3);
+        }
+        
+        .confidence-score .fill { 
+            width: 0; 
+            height: 100%; 
+            background: linear-gradient(90deg, #1f8cd4, #27ae60); 
+            border-radius: 12px; 
+            transition: width 2s ease-out;
+            position: relative;
+        }
+
+        .confidence-score .fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: shimmer 3s infinite;
+        }
+        
+        .confidence-score p { 
+            font-size: 1rem; 
+            text-align: center; 
+            margin-top: 0.8rem; 
+            font-weight: bold;
+        }
+
+        /* Enhanced AI Agents */
+        .ai-agents-grid { 
+            display: grid; 
+            grid-template-columns: repeat(2, 1fr); 
+            gap: 1.5rem; 
+        }
+        
+        .agent-card { 
+            text-align: center; 
+            background: rgba(0,0,0,0.3); 
+            padding: 1.5rem; 
+            border-radius: 16px; 
+            transition: all 0.5s ease; 
+            opacity: 0.4;
+            border: 2px solid transparent;
+        }
+        
+        .agent-card.active { 
+            opacity: 1; 
+            transform: scale(1.05); 
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 30px rgba(31, 140, 212, 0.3); 
+        }
+
+        .agent-card i {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            color: var(--primary-blue);
+        }
+
+        .agent-card h4 {
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+        
+        .agent-card .status { 
+            font-size: 0.9rem; 
+            font-weight: bold; 
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            display: inline-block;
+            margin-top: 0.5rem;
+        }
+        
+        .agent-card .status.processing { 
+            color: var(--warning-orange); 
+            background: rgba(243, 156, 18, 0.2);
+        }
+        
+        .agent-card .status.active { 
+            color: var(--success-green); 
+            background: rgba(39, 174, 96, 0.2);
+        }
+
+        .agent-card .status.standby { 
+            color: var(--text-dark); 
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Call Handling Enhanced */
+        .call-notification {
+            border: 3px solid var(--danger-red);
+            padding: 2rem;
+            text-align: center;
+            border-radius: 16px;
+            box-shadow: 0 0 40px rgba(231, 76, 60, 0.4);
+            display: none;
+            background: rgba(231, 76, 60, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .call-notification::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            animation: callShimmer 2s infinite;
+        }
+
+        @keyframes callShimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        
+        .call-notification.visible { 
+            display: block; 
+            animation: shake 0.8s ease-in-out; 
+        }
+        
+        @keyframes shake { 
+            0%, 100% { transform: translateX(0); } 
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); } 
+            20%, 40%, 60%, 80% { transform: translateX(8px); } 
+        }
+
+        .call-notification h3 {
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+            color: var(--danger-red);
+        }
+
+        .call-notification .customer-info {
+            margin: 1rem 0;
+            font-size: 1.1rem;
+        }
+
+        .call-notification .urgency {
+            color: var(--warning-orange);
+            font-weight: bold;
+            font-size: 1rem;
+        }
+        
+        #accept-call-btn { 
+            background: var(--success-green); 
+            width: 100%; 
+            margin-top: 1.5rem; 
+            font-size: 1.3rem;
+            padding: 1rem;
+        }
+
+        /* Agent Actions Enhanced */
+        .agent-actions {
+            display: none;
+        }
+
+        .agent-actions.visible {
+            display: block;
+        }
+
+        .recommendation-card {
+            background: rgba(39, 174, 96, 0.1);
+            border: 2px solid var(--success-green);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .recommendation-card:hover {
+            background: rgba(39, 174, 96, 0.2);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(39, 174, 96, 0.3);
+        }
+
+        .recommendation-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 0.8rem;
+            color: var(--success-green);
+        }
+
+        .recommendation-details {
+            color: var(--text-light);
+            margin-bottom: 1rem;
+        }
+
+        .recommendation-impact {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .impact-metric {
+            text-align: center;
+        }
+
+        .impact-metric .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--success-green);
+        }
+
+        .impact-metric .label {
+            font-size: 0.85rem;
+            color: var(--text-dark);
+        }
+        
+        /* Resolution Timeline Enhanced */
+        .resolution-timeline { 
+            list-style: none; 
+            display: flex; 
+            justify-content: space-between; 
+            position: relative; 
+            margin: 2.5rem 0;
+            padding: 0;
+        }
+        
+        .resolution-timeline::before { 
+            content: ''; 
+            position: absolute; 
+            top: 50%; 
+            left: 0; 
+            transform: translateY(-50%); 
+            height: 6px; 
+            background: #333; 
+            width: 100%;
+            border-radius: 3px;
+        }
+        
+        .resolution-progress { 
+            position: absolute; 
+            top: 50%; 
+            left: 0; 
+            transform: translateY(-50%); 
+            height: 6px; 
+            background: var(--gradient-primary); 
+            width: 0; 
+            transition: width 1.5s ease-out;
+            border-radius: 3px;
+            box-shadow: 0 0 10px rgba(31, 140, 212, 0.5);
+        }
+        
+        .resolution-step { 
+            text-align: center; 
+            position: relative; 
+            width: 120px;
+            z-index: 10;
+        }
+        
+        .resolution-step .icon-wrapper { 
+            width: 50px; 
+            height: 50px; 
+            border-radius: 50%; 
+            background: #333; 
+            color: var(--text-dark); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            margin: 0 auto 1rem; 
+            border: 5px solid var(--bg-dark-1); 
+            transition: all 0.8s ease;
+            font-size: 1.2rem;
+        }
+        
+        .resolution-step.completed .icon-wrapper { 
+            background: var(--success-green); 
+            color: white;
+            box-shadow: 0 0 20px rgba(39, 174, 96, 0.5);
+            transform: scale(1.1);
+        }
+        
+        .resolution-step .label { 
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .call-timer {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary-blue);
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        /* Safety Net Enhanced */
+        .safety-net-card { 
+            border-left: 6px solid var(--warning-orange); 
+        }
+
+        .safety-analysis {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-top: 1rem;
+        }
+
+        .safety-findings {
+            margin-top: 1rem;
+        }
+
+        .finding-item {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin-bottom: 0.8rem;
+            padding: 0.8rem;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+
+        .finding-item i {
+            color: var(--warning-orange);
+        }
+        
+        .ticket-generation { 
+            margin-top: 1.5rem; 
+            background: rgba(0,0,0,0.5); 
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            font-family: 'Courier New', Courier, monospace;
+            border: 1px solid var(--border-glass);
+        }
+        
+        .ticket-line { 
+            white-space: pre; 
+            opacity: 0; 
+            animation: type-in 2s forwards;
+            color: var(--success-green);
+        }
+        
+        @keyframes type-in { 
+            from { 
+                width: 0; 
+                opacity: 0;
+            } 
+            to { 
+                width: 100%; 
+                opacity: 1;
+            } 
+        }
+
+        /* Enhanced Metrics Dashboard */
+        .metrics-dashboard .toggle-bar { 
+            text-align: center; 
+            margin-bottom: 2rem; 
+        }
+        
+        .metrics-dashboard .toggle-btn { 
+            background: var(--bg-glass); 
+            border: 2px solid var(--border-glass); 
+            color: var(--text-light); 
+            padding: 0.8rem 2rem; 
+            border-radius: 30px; 
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            margin: 0 0.5rem;
+        }
+        
+        .metrics-dashboard .toggle-btn.active { 
+            background: var(--gradient-primary); 
+            color: white;
+            border-color: var(--primary-blue);
+            box-shadow: 0 0 20px rgba(31, 140, 212, 0.4);
+        }
+
+        .metric-card {
+            text-align: center;
+            padding: 1.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            transition: all 0.5s ease;
+        }
+
+        .metric-card:hover {
+            background: rgba(0, 0, 0, 0.3);
+            transform: translateY(-5px);
+        }
+        
+        .metric-value { 
+            font-size: 2.8rem; 
+            font-weight: bold;
+            margin: 0.5rem 0;
+            transition: all 0.5s ease;
+        }
+        
+        .metric-change { 
+            font-weight: bold;
+            font-size: 1.1rem;
+            transition: all 0.5s ease;
+        }
+        
+        .metric-change.positive { 
+            color: var(--success-green); 
+        }
+        
+        .metric-change.negative { 
+            color: var(--danger-red); 
+        }
+
+        .metric-label {
+            color: var(--text-dark);
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+
+        /* Modal Enhanced */
+        .modal-overlay { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0,0,0,0.8); 
+            backdrop-filter: blur(10px); 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            z-index: 1000; 
+            opacity: 0; 
+            visibility: hidden; 
+            transition: all 0.8s ease; 
+        }
+        
+        .modal-overlay.visible { 
+            opacity: 1; 
+            visibility: visible; 
+        }
+        
+        .modal-content { 
+            background: var(--bg-dark-2); 
+            padding: 3rem; 
+            border-radius: 20px; 
+            text-align: center; 
+            border: 2px solid var(--border-glass);
+            transform: scale(0.8); 
+            transition: all 0.8s ease;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        
+        .modal-overlay.visible .modal-content { 
+            transform: scale(1); 
+        }
+        
+        .modal-content .icon { 
+            font-size: 5rem; 
+            color: var(--success-green);
+            margin-bottom: 1rem;
+        }
+
+        .modal-content h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: var(--gradient-primary);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .modal-content p {
+            font-size: 1.2rem;
+            color: var(--text-dark);
+            margin-bottom: 2rem;
+        }
+
+        /* Predictive Insights */
+        .prediction-panel {
+            background: rgba(142, 68, 173, 0.1);
+            border: 2px solid var(--purple-accent);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .prediction-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .prediction-header i {
+            color: var(--purple-accent);
+            font-size: 1.2rem;
+        }
+
+        .prediction-list {
+            list-style: none;
+        }
+
+        .prediction-item {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            padding: 0.8rem;
+            margin-bottom: 0.5rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border-left: 3px solid var(--purple-accent);
+        }
+
+        .prediction-probability {
+            background: var(--purple-accent);
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-left: auto;
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .explainer {
+                position: static;
+                width: 100%;
+                margin-bottom: 2rem;
+                transform: none;
+            }
+            
+            .explainer.visible {
+                transform: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .grid-2, .grid-3 {
+                grid-template-columns: 1fr;
+            }
+            
+            .demo-controls {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            
+            .resolution-timeline {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .resolution-step {
+                width: 100%;
+                margin-bottom: 1rem;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-brain"></i> Synapse Lens</h1>
+            <p class="subtitle">Transforming Fragmented Customer Experiences into Intelligent, Contextual Conversations</p>
+            <p class="tagline">AI-Powered Customer Context Intelligence Platform</p>
+        </header>
+
+        <div class="demo-controls">
+            <button class="control-btn" id="start-btn"><i class="fas fa-play"></i> Start Demonstration</button>
+            <button class="control-btn" id="pause-btn" style="display: none;"><i class="fas fa-pause"></i> Pause</button>
+            <div id="speed-controls" style="display: flex; gap: 0.5rem;">
+                <button class="control-btn" data-speed="2.0">0.5x</button>
+                <button class="control-btn active" data-speed="1.0">1x</button>
+                <button class="control-btn" data-speed="0.66">1.5x</button>
+                <button class="control-btn" data-speed="0.5">2x</button>
+            </div>
+            <button class="control-btn" id="reset-btn"><i class="fas fa-redo"></i> Reset Demo</button>
+        </div>
+
+        <!-- Section 1: The Fragmented Problem -->
+        <section id="section-problem" class="demo-section">
+            <div class="section-header">
+                <h2>The Fragmented Customer Journey</h2>
+                <p>Before Synapse Lens: Scattered touchpoints, frustrated customers, inefficient support</p>
+            </div>
+            <div id="explainer-problem" class="explainer">
+                <h4>The Hidden Crisis</h4>
+                <p>Michael Obel represents millions of customers trapped in fragmented digital experiences. Each failed interaction increases frustration and churn risk.</p>
+                <div class="insight">
+                    <strong>Business Impact:</strong> 73% of customers experiencing multi-channel friction will consider switching providers within 30 days.
+                </div>
+            </div>
+            <div class="grid">
+                <div id="card-profile" class="card">
+                    <div class="card-title"><i class="fas fa-user-circle"></i> Customer Intelligence Profile</div>
+                    <div class="customer-profile">
+                        <div class="avatar">MO</div>
+                        <div class="customer-details">
+                            <h3>Michael Obel</h3>
+                            <p class="customer-info">Premium Account Holder</p>
+                            <div class="customer-badges">
+                                <span class="badge premium">Platinum Tier</span>
+                                <span class="badge">17+ Years Loyal</span>
+                                <span class="badge">High Value</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="risk-indicators">
+                        <div class="risk-item">
+                            <div class="risk-value high" id="churn-risk">73%</div>
+                            <div class="risk-label">Churn Risk</div>
+                        </div>
+                        <div class="risk-item">
+                            <div class="risk-value medium">$12.4K</div>
+                            <div class="risk-label">Lifetime Value</div>
+                        </div>
+                    </div>
+                    
+                    <div id="frustration-meter" class="frustration-meter">
+                        <p>Customer Frustration Level: <span id="frustration-value">5%</span></p>
+                        <div class="bar"><div class="fill"></div></div>
+                    </div>
+                </div>
+                
+                <div id="card-timeline" class="card">
+                    <div class="card-title"><i class="fas fa-route"></i> Multi-Channel Journey (Last 24 Hours)</div>
+                    <ul class="timeline" id="digital-journey-timeline">
+                        <!-- Timeline items will be injected by JavaScript -->
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 2: AI Context Synthesis -->
+        <section id="section-synthesis" class="demo-section">
+            <div class="section-header">
+                <h2>AI-Powered Context Synthesis</h2>
+                <p>Synapse Lens instantly analyzes fragmented data to build complete customer intelligence</p>
+            </div>
+            <div id="explainer-synthesis" class="explainer">
+                <h4>Intelligent Data Fusion</h4>
+                <p>Our specialized AI agents collaborate in real-time to synthesize scattered touchpoints into actionable insights. No context is lost, no customer frustrated.</p>
+                <div class="insight">
+                    <strong>Processing Time:</strong> 847ms to analyze 15+ data sources and generate contextual recommendations.
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div id="card-ai-processing" class="card">
+                    <div class="card-title"><i class="fas fa-cogs"></i> Multi-Agent AI Workflow</div>
+                    
+                    <div id="ai-processing" class="ai-processing">
+                        <div class="processing-grid">
+                            <div class="processing-step" id="step-ingestion">
+                                <i class="fas fa-download"></i>
+                                <p>Data Ingestion</p>
+                            </div>
+                            <div class="processing-step" id="step-analysis">
+                                <i class="fas fa-search"></i>
+                                <p>Pattern Analysis</p>
+                            </div>
+                            <div class="processing-step" id="step-synthesis">
+                                <i class="fas fa-lightbulb"></i>
+                                <p>Context Synthesis</p>
+                            </div>
+                            <div class="processing-step" id="step-recommendations">
+                                <i class="fas fa-bullseye"></i>
+                                <p>Action Planning</p>
+                            </div>
+                        </div>
+                        <p>AI agents synthesizing customer context...</p>
+                        <div class="bouncing-loader"><div></div><div></div><div></div></div>
+                    </div>
+
+                    <div class="ai-agents-grid">
+                        <div id="agent-orchestrator" class="agent-card">
+                            <i class="fas fa-sitemap"></i>
+                            <h4>Orchestrator</h4>
+                            <p>Workflow coordination</p>
+                            <span class="status standby">Standby</span>
+                        </div>
+                        <div id="agent-synthesizer" class="agent-card">
+                            <i class="fas fa-brain"></i>
+                            <h4>Context Engine</h4>
+                            <p>Data synthesis</p>
+                            <span class="status standby">Standby</span>
+                        </div>
+                        <div id="agent-billing" class="agent-card">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                            <h4>Billing Specialist</h4>
+                            <p>Account analysis</p>
+                            <span class="status standby">Standby</span>
+                        </div>
+                        <div id="agent-loyalty" class="agent-card">
+                            <i class="fas fa-heart"></i>
+                            <h4>Loyalty Engine</h4>
+                            <p>Retention analysis</p>
+                            <span class="status standby">Standby</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="card-context-results" class="card">
+                    <div class="card-title"><i class="fas fa-brain"></i> AI Context Intelligence</div>
+                    
+                    <div class="context-results" id="context-results">
+                        <div class="confidence-score">
+                            <p>Context Confidence Score: <span id="confidence-value">0%</span></p>
+                            <div class="bar"><div id="confidence-fill" class="fill"></div></div>
+                        </div>
+                        
+                        <div class="insight-grid">
+                            <div class="insight-card critical">
+                                <h4><i class="fas fa-exclamation-triangle"></i> Critical Alert</h4>
+                                <p>High churn risk detected (73%). Immediate intervention required.</p>
+                            </div>
+                            <div class="insight-card warning">
+                                <h4><i class="fas fa-bullseye"></i> Primary Intent</h4>
+                                <p>Account access issues + cost reduction inquiry</p>
+                            </div>
+                            <div class="insight-card positive">
+                                <h4><i class="fas fa-star"></i> Loyalty Opportunity</h4>
+                                <p>17-year tenure qualifies for premium retention offers</p>
+                            </div>
+                            <div class="insight-card warning">
+                                <h4><i class="fas fa-mood-irritated"></i> Emotional State</h4>
+                                <p>Frustrated, considering alternatives, needs empathy</p>
+                            </div>
+                        </div>
+
+                        <div class="prediction-panel">
+                            <div class="prediction-header">
+                                <i class="fas fa-crystal-ball"></i>
+                                <h4>Predictive Insights</h4>
+                            </div>
+                            <ul class="prediction-list">
+                                <li class="prediction-item">
+                                    <span>Will accept loyalty discount offer</span>
+                                    <span class="prediction-probability">89%</span>
+                                </li>
+                                <li class="prediction-item">
+                                    <span>Interested in device upgrade</span>
+                                    <span class="prediction-probability">67%</span>
+                                </li>
+                                <li class="prediction-item">
+                                    <span>Will leave positive review if resolved</span>
+                                    <span class="prediction-probability">78%</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <!-- Section 3: Intelligent Agent Empowerment -->
+        <section id="section-empowerment" class="demo-section">
+            <div class="section-header">
+                <h2>Agent Empowerment & Proactive Resolution</h2>
+                <p>Transforming reactive support into proactive, contextual customer care</p>
+            </div>
+            <div id="explainer-empowerment" class="explainer">
+                <h4>The Power of Context</h4>
+                <p>Instead of "How can I help you today?", our agent starts with "I see you're having trouble accessing your account and researching cost options. Let me help with both."</p>
+                <div class="insight">
+                    <strong>Result:</strong> 83% reduction in average handle time, 91% first-call resolution rate.
+                </div>
+            </div>
+            <div class="grid grid-2">
+                <div id="card-agent-dashboard" class="card">
+                    <div class="card-title"><i class="fas fa-headset"></i> Intelligent Agent Dashboard</div>
+                    
+                    <div id="call-notification" class="call-notification">
+                        <h3><i class="fas fa-phone-alt"></i> Priority Incoming Call</h3>
+                        <div class="customer-info">
+                            <strong>Michael Obel</strong> - Platinum Customer<br>
+                            17+ Year Tenure | High Value Account
+                        </div>
+                        <div class="urgency">
+                            <i class="fas fa-exclamation-triangle"></i> High Churn Risk Alert
+                        </div>
+                        <button id="accept-call-btn" class="control-btn">Accept Call with AI Context</button>
+                    </div>
+                    
+                    <div id="agent-actions" class="agent-actions">
+                        <h4>AI-Recommended Next Best Action</h4>
+                        <div class="recommendation-card" onclick="executeRecommendation()">
+                            <div class="recommendation-title">
+                                <i class="fas fa-gift"></i> Loyalty Retention Offer
+                            </div>
+                            <div class="recommendation-details">
+                                Apply <strong>$40 Loyalty Credit</strong> due to 17-year tenure and recent service friction. Address both account access and cost concerns proactively.
+                            </div>
+                            <div class="recommendation-impact">
+                                <div class="impact-metric">
+                                    <div class="value">89%</div>
+                                    <div class="label">Accept Rate</div>
+                                </div>
+                                <div class="impact-metric">
+                                    <div class="value">-73%</div>
+                                    <div class="label">Churn Risk</div>
+                                </div>
+                                <div class="impact-metric">
+                                    <div class="value">+2.8</div>
+                                    <div class="label">CSAT Boost</div>
+                                </div>
+                            </div>
+                            <button class="control-btn" style="background: var(--success-green); margin-top: 1rem; width: 100%;">
+                                Apply Recommendation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="card-resolution-flow" class="card">
+                    <div class="card-title"><i class="fas fa-tasks"></i> Real-Time Resolution Flow</div>
+                    
+                    <div class="call-timer">
+                        Call Duration: <span id="call-timer">00:00</span>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 1rem 0;">
+                        <div style="color: var(--success-green); font-weight: bold;">
+                            Time Saved: <span id="time-saved">~15 minutes</span>
+                        </div>
+                        <div style="color: var(--text-dark); font-size: 0.9rem;">
+                            vs. traditional reactive approach
+                        </div>
+                    </div>
+                    
+                    <ol id="resolution-timeline" class="resolution-timeline">
+                        <li id="step-1" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-phone-alt"></i></div>
+                            <div class="label">Call Connected</div>
+                        </li>
+                        <li id="step-2" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-brain"></i></div>
+                            <div class="label">AI Context Loaded</div>
+                        </li>
+                        <li id="step-3" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-heart"></i></div>
+                            <div class="label">Empathetic Opening</div>
+                        </li>
+                        <li id="step-4" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-key"></i></div>
+                            <div class="label">Account Access Fix</div>
+                        </li>
+                        <li id="step-5" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-gift"></i></div>
+                            <div class="label">Loyalty Offer</div>
+                        </li>
+                        <li id="step-6" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-check-circle"></i></div>
+                            <div class="label">Confirmation</div>
+                        </li>
+                        <li id="step-7" class="resolution-step">
+                            <div class="icon-wrapper"><i class="fas fa-shield-alt"></i></div>
+                            <div class="label">Proactive Follow-up</div>
+                        </li>
+                        <div id="resolution-progress" class="resolution-progress"></div>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 4: Proactive Intelligence & Safety Net -->
+        <section id="section-safety-net" class="demo-section">
+            <div class="section-header">
+                <h2>Proactive Intelligence Safety Net</h2>
+                <p>AI doesn't stop at call resolution - it prevents future friction proactively</p>
+            </div>
+            <div id="explainer-safety-net" class="explainer">
+                <h4>Beyond Resolution</h4>
+                <p>While the call ends successfully, Synapse Lens analyzes the full conversation to identify unresolved opportunities. Michael mentioned Pixel 9 interest - our AI proactively creates a follow-up case.</p>
+                <div class="insight">
+                    <strong>Prevention:</strong> 67% of follow-up cases are resolved before customers need to call again.
+                </div>
+            </div>
+            <div id="card-safety-net" class="card safety-net-card">
+                <div class="card-title"><i class="fas fa-shield-alt"></i> Proactive Safety Net Analysis</div>
+                
+                <div class="safety-analysis">
+                    <p><i class="fas fa-search"></i> AI analyzing complete conversation for unresolved opportunities...</p>
+                    
+                    <div id="safety-net-result" style="display: none;">
+                        <div class="safety-findings">
+                            <h4 style="color: var(--success-green); margin-bottom: 1rem;">
+                                <i class="fas fa-lightbulb"></i> Proactive Opportunity Detected
+                            </h4>
+                            
+                            <div class="finding-item">
+                                <i class="fas fa-mobile-alt"></i>
+                                <span><strong>Device Interest:</strong> Customer mentioned Pixel 9 upgrade research</span>
+                            </div>
+                            
+                            <div class="finding-item">
+                                <i class="fas fa-percentage"></i>
+                                <span><strong>Timing Opportunity:</strong> Trade-in promotion active (30% bonus)</span>
+                            </div>
+                            
+                            <div class="finding-item">
+                                <i class="fas fa-clock"></i>
+                                <span><strong>Optimal Window:</strong> 72-hour follow-up recommended</span>
+                            </div>
+                        </div>
+                        
+                        <p style="margin-top: 1rem; color: var(--warning-orange); font-weight: bold;">
+                            <i class="fas fa-cog"></i> Autonomously generating proactive follow-up case...
+                        </p>
+                        
+                        <div class="ticket-generation">
+                            <!-- Ticket content will be dynamically generated -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Section 5: Business Impact & ROI -->
+        <section id="section-outcome" class="demo-section">
+            <div class="section-header">
+                <h2>Transformative Business Impact</h2>
+                <p>Quantifying the power of intelligent, contextual customer experiences</p>
+            </div>
+            <div id="explainer-outcome" class="explainer">
+                <h4>The Measurable Transformation</h4>
+                <p>Synapse Lens doesn't just improve customer satisfaction - it fundamentally transforms business metrics. Every interaction becomes an opportunity for retention, growth, and advocacy.</p>
+                <div class="insight">
+                    <strong>ROI:</strong> 340% return on investment within 6 months of deployment across enterprise customers.
+                </div>
+            </div>
+            <div id="card-metrics" class="card metrics-dashboard">
+                <div class="card-title"><i class="fas fa-chart-line"></i> Before vs After: The Synapse Lens Effect</div>
+                <div class="toggle-bar">
+                    <button class="toggle-btn active" data-state="after">After Synapse Lens</button>
+                    <button class="toggle-btn" data-state="before">Before Synapse Lens</button>
+                </div>
+                <div class="grid grid-3" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="metric-card">
+                        <h4 class="metric-label">Average Handle Time</h4>
+                        <p class="metric-value" data-before="18m 22s" data-after="3m 05s">3m 05s</p>
+                        <p class="metric-change positive" data-before="" data-after="↓ 83%">↓ 83%</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4 class="metric-label">First Call Resolution</h4>
+                        <p class="metric-value" data-before="52%" data-after="91%">91%</p>
+                        <p class="metric-change positive" data-before="" data-after="↑ 75%">↑ 75%</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4 class="metric-label">Customer Satisfaction</h4>
+                        <p class="metric-value" data-before="2.1/5" data-after="4.9/5">4.9/5</p>
+                        <p class="metric-change positive" data-before="" data-after="↑ 133%">↑ 133%</p>
+                    </div>
+                    <div class="metric-card">
+                        <h4 class="metric-label">Repeat Contact Rate</h4>
+                        <p class="metric-value" data-before="45%" data-after="8%">8%</p>
+                        <p class="metric-change positive" data-before="" data-after="↓ 82%">↓ 82%</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="icon"><i class="fas fa-check-circle"></i></div>
+            <h2>Demonstration Complete</h2>
+            <p>You've witnessed the transformative power of Synapse Lens:<br>
+            From fragmented frustration to intelligent, contextual customer care.</p>
+            <button class="control-btn" id="restart-demo-btn">Experience Again</button>
+        </div>
+    </div>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const demoState = {
+            isRunning: false,
+            isPaused: false,
+            speed: 1.0,
+            timeoutIds: [],
+            currentStep: 0,
+            autoScroll: true,
+        };
+
+        const elements = {
+            startBtn: document.getElementById('start-btn'),
+            pauseBtn: document.getElementById('pause-btn'),
+            resetBtn: document.getElementById('reset-btn'),
+            speedControls: document.getElementById('speed-controls'),
+            successModal: document.getElementById('success-modal'),
+            restartDemoBtn: document.getElementById('restart-demo-btn'),
+            frustrationFill: document.querySelector('#frustration-meter .fill'),
+            frustrationValue: document.getElementById('frustration-value'),
+            timeline: document.getElementById('digital-journey-timeline'),
+            contextResults: document.getElementById('context-results'),
+            confidenceFill: document.getElementById('confidence-fill'),
+            confidenceValue: document.getElementById('confidence-value'),
+            agentCards: document.querySelectorAll('.agent-card'),
+            callNotification: document.getElementById('call-notification'),
+            acceptCallBtn: document.getElementById('accept-call-btn'),
+            agentActions: document.getElementById('agent-actions'),
+            resolutionTimeline: document.getElementById('resolution-timeline'),
+            resolutionProgress: document.getElementById('resolution-progress'),
+            callTimer: document.getElementById('call-timer'),
+            timeSaved: document.getElementById('time-saved'),
+            safetyNetResult: document.getElementById('safety-net-result'),
+            ticketGeneration: document.querySelector('.ticket-generation'),
+            metricsToggleBtns: document.querySelectorAll('.metrics-dashboard .toggle-btn'),
+            metricValues: document.querySelectorAll('.metric-value'),
+            metricChanges: document.querySelectorAll('.metric-change'),
+            explainers: document.querySelectorAll('.explainer'),
+            sectionHeaders: document.querySelectorAll('.section-header'),
+            processingSteps: document.querySelectorAll('.processing-step'),
+        };
+
+        const timelineData = [
+            { 
+                text: "Unresolved 18-minute call (3 transfers)", 
+                detail: "Account access issue, billing inquiry unresolved",
+                time: "Yesterday 2:15 PM", 
+                type: "error", 
+                icon: "headset" 
+            },
+            { 
+                text: "SMS Opt-out: Replied 'STOP' to promotions", 
+                detail: "Frustrated with irrelevant marketing messages",
+                time: "Today 10:30 AM", 
+                type: "warning", 
+                icon: "sms" 
+            },
+            { 
+                text: "Opened 'Pixel 9 Upgrade' marketing email", 
+                detail: "30% trade-in discount offer, 3-minute read time",
+                time: "Today 10:45 AM", 
+                type: "success", 
+                icon: "envelope-open-text" 
+            },
+            { 
+                text: "Extensive plan research on website", 
+                detail: "Compared competitor pricing, explored bundle options",
+                time: "Today 10:55 AM", 
+                type: "warning", 
+                icon: "search-dollar" 
+            },
+            { 
+                text: "Multiple account access failures", 
+                detail: "Face ID failed, password reset timeout (oid16564)",
+                time: "Today 11:05 AM", 
+                type: "error", 
+                icon: "mobile-alt" 
+            },
+        ];
+        
+        const demoSteps = [
+            // Step 1: Show Problem Section
+            () => showExplainer('explainer-problem'),
+            () => showSectionHeader(0),
+            () => document.getElementById('card-profile').classList.add('visible'),
+            () => document.getElementById('card-timeline').classList.add('visible'),
+            () => updateFrustration(15),
+            () => addTimelineItem(0),
+            () => updateFrustration(35),
+            () => addTimelineItem(1),
+            () => updateFrustration(45),
+            () => addTimelineItem(2),
+            () => updateFrustration(65),
+            () => addTimelineItem(3),
+            () => updateFrustration(78),
+            () => addTimelineItem(4),
+
+            // Step 2: AI Synthesis Section
+            () => showExplainer('explainer-synthesis'),
+            () => showSectionHeader(1),
+            () => document.getElementById('card-ai-processing').classList.add('visible'),
+            () => document.getElementById('card-context-results').classList.add('visible'),
+            () => activateProcessingStep('step-ingestion'),
+            () => activateAgent('agent-orchestrator', 'active'),
+            () => setTimeout(() => {
+                activateProcessingStep('step-analysis');
+                activateAgent('agent-synthesizer', 'processing');
+            }, 800 * demoState.speed),
+            () => setTimeout(() => {
+                activateProcessingStep('step-synthesis');
+                activateAgent('agent-synthesizer', 'active');
+                activateAgent('agent-billing', 'processing');
+            }, 1200 * demoState.speed),
+            () => setTimeout(() => {
+                activateProcessingStep('step-recommendations');
+                activateAgent('agent-billing', 'active');
+                activateAgent('agent-loyalty', 'processing');
+                showContextResults();
+                updateConfidence(95);
+            }, 1500 * demoState.speed),
+            () => setTimeout(() => activateAgent('agent-loyalty', 'active'), 800 * demoState.speed),
+
+            // Step 3: Agent Empowerment Section
+            () => showExplainer('explainer-empowerment'),
+            () => showSectionHeader(2),
+            () => document.getElementById('card-agent-dashboard').classList.add('visible'),
+            () => document.getElementById('card-resolution-flow').classList.add('visible'),
+            () => elements.callNotification.classList.add('visible'),
+            () => updateResolutionStep(0), // Call Connected
+            () => startCallTimer(),
+            () => { // Simulate call acceptance
+                elements.callNotification.style.display = 'none';
+                elements.agentActions.classList.add('visible');
+                updateResolutionStep(1); // AI Context Loaded
+            },
+            () => updateResolutionStep(2), // Empathetic Opening
+            () => updateResolutionStep(3), // Account Access Fix
+            () => updateResolutionStep(4), // Loyalty Offer
+            () => updateResolutionStep(5), // Confirmation
+            
+            // Step 4: Safety Net Section
+            () => showExplainer('explainer-safety-net'),
+            () => showSectionHeader(3),
+            () => document.getElementById('card-safety-net').classList.add('visible'),
+            () => updateResolutionStep(6), // Proactive Follow-up
+            () => elements.safetyNetResult.style.display = 'block',
+            () => generateProactiveTicket(),
+
+            // Step 5: Outcome Section
+            () => showExplainer('explainer-outcome'),
+            () => showSectionHeader(4),
+            () => stopCallTimer(),
+            () => document.getElementById('card-metrics').classList.add('visible'),
+            () => setTimeout(() => showSuccessModal(), 2000 * demoState.speed),
+        ];
+
+        function runDemo() {
+            if (demoState.isPaused || !demoState.isRunning) return;
+            if (demoState.currentStep < demoSteps.length) {
+                const step = demoSteps[demoState.currentStep];
+                if (typeof step === 'function') {
+                    step();
+                } else {
+                    console.warn('Invalid demo step at index:', demoState.currentStep);
+                }
+                demoState.currentStep++;
+                const timeoutId = setTimeout(runDemo, 2500 * demoState.speed);
+                demoState.timeoutIds.push(timeoutId);
+            } else {
+                demoState.isRunning = false;
+                elements.startBtn.style.display = 'inline-flex';
+                elements.pauseBtn.style.display = 'none';
+            }
+        }
+        
+        function showExplainer(explainerId) {
+            elements.explainers.forEach(exp => exp.classList.remove('visible'));
+            const explainer = document.getElementById(explainerId);
+            if (explainer) {
+                explainer.classList.add('visible');
+                if (demoState.autoScroll) {
+                    const section = explainer.closest('.demo-section');
+                    if (section) {
+                        section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            }
+        }
+
+        function showSectionHeader(index) {
+            if (elements.sectionHeaders[index]) {
+                elements.sectionHeaders[index].classList.add('visible');
+            }
+        }
+
+        function activateProcessingStep(stepId) {
+            const step = document.getElementById(stepId);
+            if (step) {
+                step.classList.add('active');
+            }
+        }
+        
+        function updateFrustration(level) {
+            elements.frustrationFill.style.width = `${level}%`;
+            elements.frustrationValue.textContent = `${level}%`;
+        }
+        
+        function addTimelineItem(index) {
+            if (index >= timelineData.length) return;
+            
+            const item = timelineData[index];
+            const li = document.createElement('li');
+            li.className = `timeline-item ${item.type}`;
+            li.innerHTML = `
+                <i class="fas fa-${item.icon} timeline-icon"></i>
+                <div class="timeline-content">${item.text}</div>
+                <div class="timeline-detail">${item.detail}</div>
+                <span class="timeline-time">${item.time}</span>
+            `;
+            elements.timeline.appendChild(li);
+            
+            // Activate timeline progress
+            elements.timeline.classList.add('active');
+            
+            setTimeout(() => li.classList.add('visible'), 100);
+        }
+
+        function showContextResults() {
+            document.getElementById('ai-processing').style.display = 'none';
+            elements.contextResults.classList.add('visible');
+        }
+        
+        function updateConfidence(level) {
+            elements.confidenceFill.style.width = `${level}%`;
+            elements.confidenceValue.textContent = `${level}%`;
+        }
+
+        function activateAgent(agentId, status) {
+            const agent = document.getElementById(agentId);
+            if (agent) {
+                agent.classList.add('active');
+                const statusElement = agent.querySelector('.status');
+                if (statusElement) {
+                    statusElement.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                    statusElement.className = `status ${status}`;
+                }
+            }
+        }
+        
+        function updateResolutionStep(index) {
+            const steps = elements.resolutionTimeline.querySelectorAll('.resolution-step');
+            if (steps[index]) {
+                steps[index].classList.add('completed');
+                const progress = ((index + 1) / steps.length) * 100;
+                elements.resolutionProgress.style.width = `${progress}%`;
+            }
+        }
+        
+        let callTimerInterval;
+        let seconds = 0;
+        
+        function startCallTimer() {
+            seconds = 0;
+            callTimerInterval = setInterval(() => {
+                seconds++;
+                const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+                const secs = (seconds % 60).toString().padStart(2, '0');
+                elements.callTimer.textContent = `${mins}:${secs}`;
+                
+                // Update time saved calculation
+                const traditional = seconds * 6; // Traditional would take ~6x longer
+                const savedMins = Math.floor(traditional / 60);
+                const savedSecs = traditional % 60;
+                elements.timeSaved.textContent = `~${savedMins}m ${savedSecs}s`;
+            }, 1000);
+            
+            demoState.timeoutIds.push(callTimerInterval);
+        }
+
+        function stopCallTimer() {
+            if (callTimerInterval) {
+                clearInterval(callTimerInterval);
+                callTimerInterval = null;
+            }
+        }
+
+        function generateProactiveTicket() {
+            const ticketLines = [
+                "{",
+                "  \"caseId\": \"MR-89980505-W01\",",
+                "  \"customer\": \"Michael Obel\",",
+                "  \"priority\": \"Medium\",",
+                "  \"category\": \"Proactive Outreach\",",
+                "  \"issue\": \"Device upgrade opportunity detected\",",
+                "  \"context\": \"Customer researched Pixel 9 during call\",",
+                "  \"recommendation\": \"Schedule trade-in consultation\",",
+                "  \"timing\": \"72-hour follow-up window\",",
+                "  \"expectedOutcome\": \"Device upgrade + retention\",",
+                "  \"assignedTo\": \"Trade-in Specialist Team\",",
+                "  \"aiConfidence\": 89",
+                "}"
+            ];
+            
+            elements.ticketGeneration.innerHTML = '';
+            ticketLines.forEach((line, index) => {
+                const p = document.createElement('div');
+                p.className = 'ticket-line';
+                p.textContent = line;
+                p.style.animationDelay = `${index * 0.2}s`;
+                elements.ticketGeneration.appendChild(p);
+            });
+        }
+        
+        function showSuccessModal() {
+            elements.successModal.classList.add('visible');
+        }
+
+        function resetDemo() {
+            // Clear all timeouts
+            demoState.timeoutIds.forEach(id => {
+                if (typeof id === 'number') {
+                    clearTimeout(id);
+                } else {
+                    clearInterval(id);
+                }
+            });
+            demoState.timeoutIds = [];
+            demoState.isRunning = false;
+            demoState.isPaused = false;
+            demoState.currentStep = 0;
+            
+            // Reset UI buttons
+            elements.startBtn.style.display = 'inline-flex';
+            elements.pauseBtn.style.display = 'none';
+            elements.successModal.classList.remove('visible');
+
+            // Reset all cards and elements
+            document.querySelectorAll('.card, .timeline-item').forEach(el => {
+                el.classList.remove('visible');
+            });
+            
+            elements.sectionHeaders.forEach(header => header.classList.remove('visible'));
+            elements.explainers.forEach(exp => exp.classList.remove('visible'));
+            
+            // Reset timeline
+            elements.timeline.innerHTML = '';
+            elements.timeline.classList.remove('active');
+            updateFrustration(5);
+            
+            // Reset AI processing
+            document.getElementById('ai-processing').style.display = 'block';
+            elements.contextResults.classList.remove('visible');
+            updateConfidence(0);
+            elements.processingSteps.forEach(step => step.classList.remove('active'));
+            
+            // Reset agents
+            elements.agentCards.forEach(card => {
+                card.classList.remove('active');
+                const status = card.querySelector('.status');
+                if (status) {
+                    status.textContent = 'Standby';
+                    status.className = 'status standby';
+                }
+            });
+            
+            // Reset call handling
+            elements.callNotification.classList.remove('visible');
+            elements.agentActions.classList.remove('visible');
+            elements.resolutionTimeline.querySelectorAll('.resolution-step').forEach(step => {
+                step.classList.remove('completed');
+            });
+            elements.resolutionProgress.style.width = '0%';
+            
+            // Reset timer
+            stopCallTimer();
+            seconds = 0;
+            elements.callTimer.textContent = '00:00';
+            elements.timeSaved.textContent = '~15 minutes';
+            
+            // Reset safety net
+            elements.safetyNetResult.style.display = 'none';
+            elements.ticketGeneration.innerHTML = '';
+            
+            // Reset metrics to "after" view
+            toggleMetrics('after');
+            elements.metricsToggleBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.state === 'after');
+            });
+        }
+
+        function toggleMetrics(state) {
+            elements.metricValues.forEach(el => {
+                const value = el.dataset[state];
+                if (value) el.textContent = value;
+            });
+            
+            elements.metricChanges.forEach(el => {
+                const change = el.dataset[state];
+                if (change) {
+                    el.innerHTML = change;
+                    el.className = state === 'before' ? 'metric-change' : 'metric-change positive';
+                }
+            });
+        }
+
+        // Global function for recommendation execution
+        window.executeRecommendation = function() {
+            updateResolutionStep(4); // Move to loyalty offer step
+        };
+        
+        // Event Listeners
+        elements.startBtn.addEventListener('click', () => {
+            if (!demoState.isRunning) {
+                resetDemo(); // Ensure clean start
+            }
+            demoState.isRunning = true;
+            demoState.isPaused = false;
+            elements.startBtn.style.display = 'none';
+            elements.pauseBtn.style.display = 'inline-flex';
+            runDemo();
+        });
+
+        elements.pauseBtn.addEventListener('click', () => {
+            demoState.isPaused = !demoState.isPaused;
+            elements.pauseBtn.innerHTML = demoState.isPaused ? 
+                '<i class="fas fa-play"></i> Resume' : 
+                '<i class="fas fa-pause"></i> Pause';
+            if (!demoState.isPaused && demoState.isRunning) {
+                runDemo();
+            }
+        });
+
+        elements.resetBtn.addEventListener('click', resetDemo);
+        
+        elements.restartDemoBtn.addEventListener('click', () => {
+            elements.successModal.classList.remove('visible');
+            resetDemo();
+            setTimeout(() => elements.startBtn.click(), 500);
+        });
+
+        elements.speedControls.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON' && e.target.dataset.speed) {
+                demoState.speed = parseFloat(e.target.dataset.speed);
+                elements.speedControls.querySelectorAll('button').forEach(btn => 
+                    btn.classList.remove('active'));
+                e.target.classList.add('active');
+            }
+        });
+        
+        elements.metricsToggleBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                elements.metricsToggleBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                toggleMetrics(btn.dataset.state);
+            });
+        });
+
+        elements.acceptCallBtn.addEventListener('click', () => {
+            elements.callNotification.style.display = 'none';
+            elements.agentActions.classList.add('visible');
+            updateResolutionStep(1);
+        });
+        
+        // Initialize demo
+        resetDemo();
+    });
+    </script>
+</body>
+</html>
